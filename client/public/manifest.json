@@ -1,0 +1,24 @@
+{
+  "name": "서울 지하철 안내",
+  "short_name": "지하철",
+  "description": "수도권 전체 지하철 경로 검색 및 실시간 안내",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAFAFA",
+  "theme_color": "#1B2838",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://d2xsxph8kpxj0f.cloudfront.net/310519663470511899/FTmUprGrP96stfia225Yig/metro-icon-512-gGu3gBVcwuMgfZAiA4RgMd.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://d2xsxph8kpxj0f.cloudfront.net/310519663470511899/FTmUprGrP96stfia225Yig/metro-icon-512-gGu3gBVcwuMgfZAiA4RgMd.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

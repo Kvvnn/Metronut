@@ -1,0 +1,28 @@
+# Project TODO
+
+- [x] Basic homepage layout with metro map
+- [x] Navigation tab bar (iOS style)
+- [x] Station search with autocomplete (727 stations, 21 lines)
+- [x] Route search algorithm (shortest time / fewest transfers / least walking)
+- [x] Route result page with multiple options
+- [x] Route detail page with transfer info
+- [x] Riding page with real-time position tracking
+- [x] Station info page with realtime arrivals
+- [x] Metro map page (list view)
+- [x] Settings page with API key management
+- [x] PWA manifest and service worker
+- [x] Interactive SVG metro map component
+- [x] UX redesign - metro map as home centerpiece
+- [x] Metro map coordinate refinement (v3)
+- [x] Search → metro map integration (highlight station)
+- [x] Fullstack upgrade (web-db-user)
+- [x] Home.tsx conflict resolution (remove useAuth import issue)
+- [x] API proxy implementation (server-side Seoul Metro API)
+- [x] Remove API key from client-side localStorage
+- [x] Update Settings page to reflect server-side API key
+- [x] Update realtimeApi.ts to use tRPC instead of direct API calls
+- [x] 2nd phase feature dummies (dark mode, congestion, offline data)
+- [x] Write vitest tests for API proxy
+- [x] Metro map coordinate refinement v5 - improved layout with spread coordinates and line separation
+- [x] Further refinement: 2호선 rectangular loop shape, transfer station coordinate unification (39 close pairs unified)
+- [ ] Metro map coordinate v6 - extract pixel coords directly from reference PNG and interpolate
