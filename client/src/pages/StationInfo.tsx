@@ -11,7 +11,7 @@ import { useParams } from "wouter";
 import { ArrowLeft, Train, Clock, DoorOpen, ArrowUpDown, Star, Users, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
 import { getStationInfo, getLineInfo } from "@/lib/pathfinder";
-import { getRealtimeArrivals, getSimulatedCongestion, checkApiKeyStatus } from "@/lib/realtimeApi";
+import { getRealtimeArrivals, getCongestion, checkApiKeyStatus } from "@/lib/realtimeApi";
 import type { ArrivalInfo, CongestionInfo } from "@/lib/realtimeApi";
 import { toast } from "sonner";
 
@@ -22,6 +22,7 @@ export default function StationInfo() {
   const [selectedLine, setSelectedLine] = useState(stations[0]?.lineId || "");
   const [arrivals, setArrivals] = useState<ArrivalInfo[]>([]);
   const [congestion, setCongestion] = useState<CongestionInfo[]>([]);
+  const [congestionSimulated, setCongestionSimulated] = useState(true);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isSimulated, setIsSimulated] = useState(true);
@@ -30,7 +31,10 @@ export default function StationInfo() {
 
   useEffect(() => {
     loadArrivals();
-    setCongestion(getSimulatedCongestion());
+    getCongestion(decodedName, selectedLine).then(({ cars, isSimulated }) => {
+      setCongestion(cars);
+      setCongestionSimulated(isSimulated);
+    });
     checkApiKeyStatus().then(hasKey => setIsSimulated(!hasKey));
   }, [decodedName, selectedLine]);
 
@@ -218,7 +222,9 @@ export default function StationInfo() {
         <h3 className="text-[14px] font-semibold text-[#1B2838] mb-3 flex items-center gap-2">
           <Users size={16} className="text-[#9B59B6]" />
           칸별 혼잡도
-          <span className="text-[10px] bg-[#F0F0F2] text-[#8E8E93] px-1.5 py-0.5 rounded ml-1">준비중</span>
+          {congestionSimulated && (
+            <span className="text-[10px] bg-[#FFF3EB] text-[#E67E22] px-1.5 py-0.5 rounded ml-1">시뮬레이션</span>
+          )}
         </h3>
         <div className="ios-card p-4">
           <div className="flex items-end gap-1 h-16">

@@ -119,6 +119,23 @@ export default function RouteDetail() {
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] p-4 bg-gradient-to-t from-background via-background to-transparent">
         <button
           onClick={() => {
+            const firstRideIdx = route.segments.findIndex(s => !s.isTransfer);
+            const firstRide = route.segments[firstRideIdx];
+            if (firstRide) {
+              const hasMoreRides = route.segments
+                .slice(firstRideIdx + 1)
+                .some(s => !s.isTransfer);
+              const ridingPayload = {
+                lineId: firstRide.lineId,
+                lineName: getLineInfo(firstRide.lineId)?.name || firstRide.lineName,
+                direction: `${firstRide.toStation.name} 방면`,
+                fromStationName: firstRide.fromStation.name,
+                toStationName: firstRide.toStation.name,
+                stationNames: firstRide.stations.map(s => s.name),
+                isTransferAtEnd: hasMoreRides,
+              };
+              sessionStorage.setItem("riding_data", JSON.stringify(ridingPayload));
+            }
             toast("탑승 안내를 시작합니다");
             setLocation("/riding");
           }}

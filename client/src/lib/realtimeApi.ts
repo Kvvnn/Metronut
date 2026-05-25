@@ -98,12 +98,60 @@ function generateSimulatedArrivals(stationName: string): ArrivalInfo[] {
 }
 
 /**
- * 실시간 혼잡도 정보 (2차 기능 - 더미)
+ * 실시간 혼잡도 정보 (서버 프록시 경유)
  */
 export interface CongestionInfo {
   carNumber: number;
   level: "여유" | "보통" | "혼잡" | "매우혼잡";
   percentage: number;
+}
+
+export async function getCongestion(
+  stationName: string,
+  lineId?: string,
+): Promise<{ cars: CongestionInfo[]; isSimulated: boolean }> {
+  try {
+    const url = `/api/trpc/metro.getCongestion?batch=1&input=${encodeURIComponent(
+      JSON.stringify({ "0": { json: { stationName, lineId } } }),
+    )}`;
+    const response = await fetch(url, { credentials: "include" });
+    if (!response.ok) return { cars: getSimulatedCongestion(), isSimulated: true };
+    const data = await response.json();
+    const result = data[0]?.result?.data?.json;
+    if (result?.cars) return { cars: result.cars, isSimulated: !!result.isSimulated };
+    return { cars: getSimulatedCongestion(), isSimulated: true };
+  } catch {
+    return { cars: getSimulatedCongestion(), isSimulated: true };
+  }
+}
+
+/**
+ * 실시간 열차 위치 조회 (서버 프록시 경유)
+ */
+export interface TrainPosition {
+  trainNo: string;
+  stationName: string;
+  updnLine: string;
+  trainStatus: string;
+  destination: string;
+  receivedAt: string;
+}
+
+export async function getTrainPositions(
+  lineName: string,
+): Promise<{ positions: TrainPosition[]; isSimulated: boolean }> {
+  try {
+    const url = `/api/trpc/metro.getTrainPositions?batch=1&input=${encodeURIComponent(
+      JSON.stringify({ "0": { json: { lineName } } }),
+    )}`;
+    const response = await fetch(url, { credentials: "include" });
+    if (!response.ok) return { positions: [], isSimulated: true };
+    const data = await response.json();
+    const result = data[0]?.result?.data?.json;
+    return result ?? { positions: [], isSimulated: true };
+  } catch {
+    return { positions: [], isSimulated: true };
+  }
 }
 
 export function getSimulatedCongestion(): CongestionInfo[] {
@@ -114,7 +162,7 @@ export function getSimulatedCongestion(): CongestionInfo[] {
     else if (percentage < 60) level = "보통";
     else if (percentage < 80) level = "혼잡";
     else level = "매우혼잡";
-    
+
     return { carNumber: i + 1, level, percentage };
   });
 }

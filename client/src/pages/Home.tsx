@@ -12,7 +12,6 @@ import { useLocation } from "wouter";
 import { Search, ArrowRightLeft, Clock, Star, ChevronRight, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useCallback } from "react";
-import { getAllLines } from "@/lib/pathfinder";
 import MetroMap from "@/components/MetroMap";
 
 const recentRoutes = [
@@ -30,9 +29,7 @@ export default function Home() {
   const [, setLocation] = useLocation();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [selectedLines, setSelectedLines] = useState<string[]>([]);
   const [showRecent, setShowRecent] = useState(false);
-  const lines = getAllLines();
 
   // 노선도에서 역을 선택했을 때
   const handleStationSelect = useCallback((name: string) => {
@@ -63,15 +60,6 @@ export default function Home() {
     setFrom(to);
     setTo(from);
   };
-
-  const handleLineFilter = (lineId: string) => {
-    setSelectedLines(prev => {
-      if (prev.includes(lineId)) return prev.filter(id => id !== lineId);
-      return [...prev, lineId];
-    });
-  };
-
-  const clearFilter = () => setSelectedLines([]);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
@@ -148,44 +136,9 @@ export default function Home() {
         </AnimatePresence>
       </motion.div>
 
-      {/* Line Filter Chips */}
-      <div className="px-3 py-2 bg-white/80 backdrop-blur-sm z-20 border-b border-[#F0F0F2]/30">
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
-          <button
-            onClick={clearFilter}
-            className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
-              selectedLines.length === 0
-                ? "bg-[#1B2838] text-white"
-                : "bg-[#F5F5F7] text-[#1B2838]"
-            }`}
-          >
-            전체
-          </button>
-          {lines.map(line => (
-            <button
-              key={line.id}
-              onClick={() => handleLineFilter(line.id)}
-              className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
-                selectedLines.includes(line.id)
-                  ? "text-white shadow-sm"
-                  : "bg-[#F5F5F7] text-[#1B2838]"
-              }`}
-              style={
-                selectedLines.includes(line.id)
-                  ? { backgroundColor: line.color }
-                  : {}
-              }
-            >
-              {line.shortName}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* Metro Map - 메인 영역 */}
       <div className="flex-1 relative">
         <MetroMap
-          selectedLines={selectedLines}
           onStationSelect={handleStationSelect}
           highlightedStation={from || to || undefined}
         />

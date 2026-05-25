@@ -12,6 +12,7 @@ import { Bell, Route, Info, ChevronRight, Moon, Vibrate, Globe, Trash2, Database
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { checkApiKeyStatus } from "@/lib/realtimeApi";
+import { useTheme } from "@/contexts/ThemeContext";
 
 export default function Settings() {
   const [alarmSound, setAlarmSound] = useState(true);
@@ -20,6 +21,8 @@ export default function Settings() {
   const [preferRoute, setPreferRoute] = useState("fastest");
   const [showApiInfo, setShowApiInfo] = useState(false);
   const [apiConfigured, setApiConfigured] = useState(false);
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === "dark";
 
   useEffect(() => {
     checkApiKeyStatus().then(hasKey => setApiConfigured(hasKey));
@@ -206,21 +209,18 @@ export default function Settings() {
           일반
         </h3>
         <div className="ios-card divide-y divide-[#F0F0F2]">
-          <button
-            className="w-full flex items-center justify-between px-4 py-3.5 btn-press"
-            onClick={() => toast("다크 모드 기능이 곧 제공됩니다.")}
-          >
+          <div className="flex items-center justify-between px-4 py-3.5">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-[#1B2838] flex items-center justify-center">
                 <Moon size={16} className="text-white" />
               </div>
               <div className="text-left">
                 <span className="text-[15px] text-[#1B2838] block">다크 모드</span>
-                <span className="text-[12px] text-[#8E8E93]">시스템 설정에 따름</span>
+                <span className="text-[12px] text-[#8E8E93]">{isDark ? "다크" : "라이트"} 테마 사용 중</span>
               </div>
             </div>
-            <span className="text-[10px] bg-[#F0F0F2] text-[#8E8E93] px-1.5 py-0.5 rounded">준비중</span>
-          </button>
+            <ToggleSwitch checked={isDark} onChange={() => toggleTheme?.()} />
+          </div>
           <button
             className="w-full flex items-center justify-between px-4 py-3.5 btn-press"
             onClick={() => toast("언어 설정 기능이 곧 제공됩니다.")}

@@ -1,18 +1,15 @@
 /**
- * 인터랙티브 SVG 노선도 컴포넌트
- * Design: iOS 스타일 - 핀치 줌, 패닝, 역 탭 상호작용
- * - 전체 수도권 노선을 SVG로 시각화
- * - 핀치 줌 & 드래그 패닝 지원
- * - 역 탭 시 역 상세 이동 또는 출발/도착역 설정
- * - 노선 필터링
- * - 검색된 역 하이라이트 + 자동 줌인
+ * 좌표 기반 인터랙티브 노선도
+ * - 노선, 역 점, 클릭 영역을 모두 같은 mapCoords 좌표계로 그린다.
+ * - 따라서 화면에 보이는 역 점과 실제 클릭 판정 위치가 항상 일치한다.
  */
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent, TouchEvent, WheelEvent } from "react";
 import { useLocation } from "wouter";
 import mapCoords from "@/data/mapCoords.json";
 import metroData from "@/data/metroData.json";
 import { getLineInfo } from "@/lib/pathfinder";
-import type { Station, Line } from "@/lib/pathfinder";
+import type { Station } from "@/lib/pathfinder";
 
 interface MapStation {
   id: string;
@@ -29,6 +26,29 @@ interface MapEdge {
   lineId: string;
 }
 
+const MAP_BOUNDS = { x: 50, y: 50, w: 1800, h: 1400 };
+const INITIAL_VIEW_BOX = { ...MAP_BOUNDS };
+const MIN_VIEWBOX_WIDTH = 360;
+const MIN_VIEWBOX_HEIGHT = 280;
+
+function clampViewBox(box: { x: number; y: number; w: number; h: number }) {
+  const w = Math.max(MIN_VIEWBOX_WIDTH, Math.min(MAP_BOUNDS.w, box.w));
+  const h = Math.max(MIN_VIEWBOX_HEIGHT, Math.min(MAP_BOUNDS.h, box.h));
+  const paddingX = w * 0.08;
+  const paddingY = h * 0.08;
+  const minX = MAP_BOUNDS.x - paddingX;
+  const minY = MAP_BOUNDS.y - paddingY;
+  const maxX = MAP_BOUNDS.x + MAP_BOUNDS.w - w + paddingX;
+  const maxY = MAP_BOUNDS.y + MAP_BOUNDS.h - h + paddingY;
+
+  return {
+    x: Math.min(Math.max(box.x, minX), maxX),
+    y: Math.min(Math.max(box.y, minY), maxY),
+    w,
+    h,
+  };
+}
+
 export default function MetroMap({
   onStationSelect,
   selectedLines,
@@ -39,104 +59,99 @@ export default function MetroMap({
   highlightedStation?: string;
 }) {
   const [, setLocation] = useLocation();
-  const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Transform state
-  const [viewBox, setViewBox] = useState({ x: 50, y: 50, w: 1800, h: 1400 });
+  const [viewBox, setViewBox] = useState(INITIAL_VIEW_BOX);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hoveredStation, setHoveredStation] = useState<string | null>(null);
   const [selectedStation, setSelectedStation] = useState<string | null>(null);
 
-  // Touch state for pinch zoom
   const lastTouchDist = useRef<number | null>(null);
-  const lastTouchCenter = useRef<{ x: number; y: number } | null>(null);
 
-  // Process data
   const stations: MapStation[] = useMemo(() => {
+    const coordsById = mapCoords.stations as Record<string, { x: number; y: number }>;
+
     return (metroData.stations as Station[])
-      .filter(s => {
+      .filter(station => {
         if (selectedLines && selectedLines.length > 0) {
-          return selectedLines.includes(s.lineId);
+          return selectedLines.includes(station.lineId);
         }
         return true;
       })
-      .map(s => {
-        const coords = (mapCoords.stations as Record<string, { x: number; y: number }>)[s.id];
+      .map(station => {
+        const coords = coordsById[station.id];
+        if (!coords || coords.x <= 0 || coords.y <= 0) return null;
+
         return {
-          id: s.id,
-          name: s.name,
-          lineId: s.lineId,
-          x: coords?.x || 0,
-          y: coords?.y || 0,
-          transfers: s.transfers,
+          id: station.id,
+          name: station.name,
+          lineId: station.lineId,
+          x: coords.x,
+          y: coords.y,
+          transfers: station.transfers,
         };
       })
-      .filter(s => s.x > 0 && s.y > 0);
+      .filter((station): station is MapStation => Boolean(station));
   }, [selectedLines]);
 
-  const edges: MapEdge[] = useMemo(() => {
-    const stationIds = new Set(stations.map(s => s.id));
-    return (metroData.edges as { from: string; to: string; lineId: string }[])
-      .filter(e => stationIds.has(e.from) && stationIds.has(e.to));
-  }, [stations]);
-
-  // Station position lookup
   const stationPosMap = useMemo(() => {
-    const map = new Map<string, { x: number; y: number; name: string; lineId: string; transfers: string[] }>();
-    stations.forEach(s => map.set(s.id, { x: s.x, y: s.y, name: s.name, lineId: s.lineId, transfers: s.transfers }));
+    const map = new Map<string, MapStation>();
+    for (const station of stations) {
+      map.set(station.id, station);
+    }
     return map;
   }, [stations]);
 
-  // Deduplicate stations by name (show only one dot per physical station)
+  const edges: MapEdge[] = useMemo(() => {
+    const stationIds = new Set(stations.map(station => station.id));
+    return (metroData.edges as MapEdge[])
+      .filter(edge => stationIds.has(edge.from) && stationIds.has(edge.to));
+  }, [stations]);
+
   const uniqueStations = useMemo(() => {
     const seen = new Map<string, MapStation>();
-    stations.forEach(s => {
-      if (!seen.has(s.name)) {
-        seen.set(s.name, s);
-      } else {
-        const existing = seen.get(s.name)!;
-        if (s.transfers.length > existing.transfers.length) {
-          seen.set(s.name, s);
-        }
+
+    for (const station of stations) {
+      const existing = seen.get(station.name);
+      if (!existing || station.transfers.length > existing.transfers.length) {
+        seen.set(station.name, station);
       }
-    });
+    }
+
     return Array.from(seen.values());
   }, [stations]);
 
-  // Transfer stations (stations with multiple lines)
   const transferStations = useMemo(() => {
-    const nameCount = new Map<string, number>();
-    (metroData.stations as Station[]).forEach(s => {
-      nameCount.set(s.name, (nameCount.get(s.name) || 0) + 1);
-    });
+    const countByName = new Map<string, number>();
+
+    for (const station of metroData.stations as Station[]) {
+      countByName.set(station.name, (countByName.get(station.name) || 0) + 1);
+    }
+
     return new Set(
-      Array.from(nameCount.entries())
+      Array.from(countByName.entries())
         .filter(([, count]) => count > 1)
-        .map(([name]) => name)
+        .map(([name]) => name),
     );
   }, []);
 
-  // Auto-zoom to highlighted station
   useEffect(() => {
-    if (highlightedStation) {
-      const station = uniqueStations.find(s => s.name === highlightedStation);
-      if (station) {
-        const zoomW = 600;
-        const zoomH = 480;
-        setViewBox({
-          x: station.x - zoomW / 2,
-          y: station.y - zoomH / 2,
-          w: zoomW,
-          h: zoomH,
-        });
-        setSelectedStation(highlightedStation);
-      }
-    }
+    if (!highlightedStation) return;
+    const station = uniqueStations.find(item => item.name === highlightedStation);
+    if (!station) return;
+
+    const nextW = 520;
+    const nextH = 420;
+    setSelectedStation(station.name);
+    setViewBox(clampViewBox({
+      x: station.x - nextW / 2,
+      y: station.y - nextH / 2,
+      w: nextW,
+      h: nextH,
+    }));
   }, [highlightedStation, uniqueStations]);
 
-  // Convert screen coords to SVG coords
   const screenToSvg = useCallback((clientX: number, clientY: number) => {
     if (!containerRef.current) return { x: 0, y: 0 };
     const rect = containerRef.current.getBoundingClientRect();
@@ -145,274 +160,228 @@ export default function MetroMap({
     return { x, y };
   }, [viewBox]);
 
-  // Mouse/touch handlers for panning
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'touch') return;
-    setIsDragging(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  const zoomAt = useCallback((factor: number, center?: { x: number; y: number }) => {
+    setViewBox(prev => {
+      const focus = center || { x: prev.x + prev.w / 2, y: prev.y + prev.h / 2 };
+      const nextW = prev.w * factor;
+      const nextH = prev.h * factor;
+      const nextX = focus.x - (focus.x - prev.x) * (nextW / prev.w);
+      const nextY = focus.y - (focus.y - prev.y) * (nextH / prev.h);
+      return clampViewBox({ x: nextX, y: nextY, w: nextW, h: nextH });
+    });
   }, []);
 
-  const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isDragging || e.pointerType === 'touch') return;
-    const dx = (e.clientX - dragStart.x) * (viewBox.w / (containerRef.current?.clientWidth || 1));
-    const dy = (e.clientY - dragStart.y) * (viewBox.h / (containerRef.current?.clientHeight || 1));
-    setViewBox(prev => ({ ...prev, x: prev.x - dx, y: prev.y - dy }));
-    setDragStart({ x: e.clientX, y: e.clientY });
-  }, [isDragging, dragStart, viewBox.w, viewBox.h]);
+  const handlePointerDown = useCallback((event: PointerEvent<SVGSVGElement>) => {
+    if (event.pointerType === "touch") return;
+    setIsDragging(true);
+    setDragStart({ x: event.clientX, y: event.clientY });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, []);
+
+  const handlePointerMove = useCallback((event: PointerEvent<SVGSVGElement>) => {
+    if (!isDragging || event.pointerType === "touch") return;
+    const width = containerRef.current?.clientWidth || 1;
+    const height = containerRef.current?.clientHeight || 1;
+    const dx = (event.clientX - dragStart.x) * (viewBox.w / width);
+    const dy = (event.clientY - dragStart.y) * (viewBox.h / height);
+
+    setViewBox(prev => clampViewBox({ ...prev, x: prev.x - dx, y: prev.y - dy }));
+    setDragStart({ x: event.clientX, y: event.clientY });
+  }, [dragStart, isDragging, viewBox.h, viewBox.w]);
 
   const handlePointerUp = useCallback(() => {
     setIsDragging(false);
   }, []);
 
-  // Wheel zoom
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const factor = e.deltaY > 0 ? 1.1 : 0.9;
-    const svgPoint = screenToSvg(e.clientX, e.clientY);
+  const handleWheel = useCallback((event: WheelEvent<SVGSVGElement>) => {
+    event.preventDefault();
+    zoomAt(event.deltaY > 0 ? 1.14 : 0.88, screenToSvg(event.clientX, event.clientY));
+  }, [screenToSvg, zoomAt]);
 
-    setViewBox(prev => {
-      const newW = Math.max(300, Math.min(2000, prev.w * factor));
-      const newH = Math.max(240, Math.min(1600, prev.h * factor));
-      const newX = svgPoint.x - (svgPoint.x - prev.x) * (newW / prev.w);
-      const newY = svgPoint.y - (svgPoint.y - prev.y) * (newH / prev.h);
-      return { x: newX, y: newY, w: newW, h: newH };
-    });
-  }, [screenToSvg]);
-
-  // Touch handlers for pinch zoom
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
+  const handleTouchStart = useCallback((event: TouchEvent<SVGSVGElement>) => {
+    if (event.touches.length === 2) {
+      const dx = event.touches[0].clientX - event.touches[1].clientX;
+      const dy = event.touches[0].clientY - event.touches[1].clientY;
       lastTouchDist.current = Math.sqrt(dx * dx + dy * dy);
-      lastTouchCenter.current = {
-        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-        y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
-      };
-    } else if (e.touches.length === 1) {
+    } else if (event.touches.length === 1) {
       setIsDragging(true);
-      setDragStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
+      setDragStart({ x: event.touches[0].clientX, y: event.touches[0].clientY });
     }
   }, []);
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    e.preventDefault();
-    if (e.touches.length === 2 && lastTouchDist.current !== null) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
+  const handleTouchMove = useCallback((event: TouchEvent<SVGSVGElement>) => {
+    event.preventDefault();
+
+    if (event.touches.length === 2 && lastTouchDist.current !== null) {
+      const dx = event.touches[0].clientX - event.touches[1].clientX;
+      const dy = event.touches[0].clientY - event.touches[1].clientY;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      const factor = lastTouchDist.current / dist;
-
       const center = {
-        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-        y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+        x: (event.touches[0].clientX + event.touches[1].clientX) / 2,
+        y: (event.touches[0].clientY + event.touches[1].clientY) / 2,
       };
-      const svgPoint = screenToSvg(center.x, center.y);
 
-      setViewBox(prev => {
-        const newW = Math.max(300, Math.min(2000, prev.w * factor));
-        const newH = Math.max(240, Math.min(1600, prev.h * factor));
-        const newX = svgPoint.x - (svgPoint.x - prev.x) * (newW / prev.w);
-        const newY = svgPoint.y - (svgPoint.y - prev.y) * (newH / prev.h);
-        return { x: newX, y: newY, w: newW, h: newH };
-      });
-
+      zoomAt(lastTouchDist.current / dist, screenToSvg(center.x, center.y));
       lastTouchDist.current = dist;
-      lastTouchCenter.current = center;
-    } else if (e.touches.length === 1 && isDragging) {
-      const dx = (e.touches[0].clientX - dragStart.x) * (viewBox.w / (containerRef.current?.clientWidth || 1));
-      const dy = (e.touches[0].clientY - dragStart.y) * (viewBox.h / (containerRef.current?.clientHeight || 1));
-      setViewBox(prev => ({ ...prev, x: prev.x - dx, y: prev.y - dy }));
-      setDragStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
+    } else if (event.touches.length === 1 && isDragging) {
+      const width = containerRef.current?.clientWidth || 1;
+      const height = containerRef.current?.clientHeight || 1;
+      const dx = (event.touches[0].clientX - dragStart.x) * (viewBox.w / width);
+      const dy = (event.touches[0].clientY - dragStart.y) * (viewBox.h / height);
+
+      setViewBox(prev => clampViewBox({ ...prev, x: prev.x - dx, y: prev.y - dy }));
+      setDragStart({ x: event.touches[0].clientX, y: event.touches[0].clientY });
     }
-  }, [isDragging, dragStart, viewBox.w, viewBox.h, screenToSvg]);
+  }, [dragStart, isDragging, screenToSvg, viewBox.h, viewBox.w, zoomAt]);
 
   const handleTouchEnd = useCallback(() => {
     setIsDragging(false);
     lastTouchDist.current = null;
-    lastTouchCenter.current = null;
   }, []);
 
-  // Station click handler
   const handleStationClick = useCallback((name: string) => {
+    setSelectedStation(name);
     if (onStationSelect) {
       onStationSelect(name);
-      setSelectedStation(name);
-    } else {
-      setSelectedStation(name);
-      setLocation(`/station/${encodeURIComponent(name)}`);
+      return;
     }
+
+    setLocation(`/station/${encodeURIComponent(name)}`);
   }, [onStationSelect, setLocation]);
 
-  // Zoom controls
-  const zoomIn = () => {
-    setViewBox(prev => ({
-      x: prev.x + prev.w * 0.1,
-      y: prev.y + prev.h * 0.1,
-      w: Math.max(300, prev.w * 0.8),
-      h: Math.max(240, prev.h * 0.8),
-    }));
-  };
-
-  const zoomOut = () => {
-    setViewBox(prev => ({
-      x: prev.x - prev.w * 0.125,
-      y: prev.y - prev.h * 0.125,
-      w: Math.min(1800, prev.w * 1.25),
-      h: Math.min(1400, prev.h * 1.25),
-    }));
-  };
-
-  const resetView = () => {
-    setViewBox({ x: 50, y: 50, w: 1800, h: 1400 });
-    setSelectedStation(null);
-  };
-
-  // Determine station radius based on zoom level
-  const stationRadius = useMemo(() => {
-    const zoomLevel = 1900 / viewBox.w;
-    if (zoomLevel > 2.5) return 10;
-    if (zoomLevel > 1.5) return 7;
-    return 5;
-  }, [viewBox.w]);
-
-  // Show labels only when zoomed in enough
-  const showLabels = viewBox.w < 1400;
-  const showAllLabels = viewBox.w < 800;
-  const showTransferLabelsOnly = viewBox.w < 1800 && viewBox.w >= 1400;
+  const zoomLevel = MAP_BOUNDS.w / viewBox.w;
+  const stationRadius = zoomLevel > 2.5 ? 8 : zoomLevel > 1.5 ? 6 : 4.5;
+  const labelMode = viewBox.w < 820 ? "all" : viewBox.w < 1350 ? "major" : "transfer";
 
   return (
-    <div className="relative w-full h-full" ref={containerRef}>
-      {/* SVG Map */}
+    <div className="relative w-full h-full bg-[#F7F8FA]" ref={containerRef}>
       <svg
-        ref={svgRef}
         viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+        preserveAspectRatio="none"
         className="w-full h-full touch-none select-none"
-        style={{ background: '#FAFBFC' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         onWheel={handleWheel}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        aria-label="서울 지하철 노선도"
+        role="img"
       >
-        {/* Grid pattern for visual reference */}
         <defs>
-          <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
-            <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#F0F0F2" strokeWidth="0.5" />
-          </pattern>
-          {/* Highlight glow filter */}
-          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+          <filter id="station-glow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
             <feMerge>
-              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
         </defs>
-        <rect x="50" y="50" width="1800" height="1400" fill="url(#grid)" />
 
-        {/* Edges (lines between stations) */}
-        <g className="edges">
-          {edges.map((edge, idx) => {
-            const fromPos = stationPosMap.get(edge.from);
-            const toPos = stationPosMap.get(edge.to);
-            if (!fromPos || !toPos) return null;
+        <rect
+          x={MAP_BOUNDS.x - 80}
+          y={MAP_BOUNDS.y - 80}
+          width={MAP_BOUNDS.w + 160}
+          height={MAP_BOUNDS.h + 160}
+          fill="#F7F8FA"
+        />
+
+        <g>
+          {edges.map((edge, index) => {
+            const from = stationPosMap.get(edge.from);
+            const to = stationPosMap.get(edge.to);
+            if (!from || !to) return null;
+
             const line = getLineInfo(edge.lineId);
             return (
               <line
-                key={idx}
-                x1={fromPos.x}
-                y1={fromPos.y}
-                x2={toPos.x}
-                y2={toPos.y}
-                stroke={line?.color || '#999'}
-                strokeWidth={viewBox.w < 800 ? 5 : 4}
+                key={`${edge.from}-${edge.to}-${index}`}
+                x1={from.x}
+                y1={from.y}
+                x2={to.x}
+                y2={to.y}
+                stroke={line?.color || "#8E8E93"}
+                strokeWidth={viewBox.w < 850 ? 6 : 5}
                 strokeLinecap="round"
-                opacity={0.85}
+                opacity={0.9}
               />
             );
           })}
         </g>
 
-        {/* Station dots */}
-        <g className="stations">
+        <g>
           {uniqueStations.map(station => {
+            const line = getLineInfo(station.lineId);
             const isTransfer = transferStations.has(station.name);
             const isHovered = hoveredStation === station.name;
-            const isSelected = selectedStation === station.name;
-            const isHighlighted = highlightedStation === station.name;
-            const line = getLineInfo(station.lineId);
-            const r = isTransfer ? stationRadius + 2 : stationRadius;
+            const isSelected = selectedStation === station.name || highlightedStation === station.name;
+            const radius = isTransfer ? stationRadius + 2 : stationRadius;
+            const showLabel =
+              labelMode === "all" ||
+              (labelMode === "major" && (isTransfer || isHovered || isSelected)) ||
+              (labelMode === "transfer" && (isTransfer || isHovered || isSelected));
 
             return (
               <g key={station.id}>
-                {/* Highlight ring for selected/highlighted station */}
-                {(isHighlighted || isSelected) && (
+                {isSelected && (
                   <circle
                     cx={station.x}
                     cy={station.y}
-                    r={r + 8}
+                    r={radius + 8}
                     fill="none"
-                    stroke="#4A90D9"
+                    stroke="#1B2838"
                     strokeWidth={2}
-                    opacity={0.6}
-                    filter="url(#glow)"
-                  >
-                    <animate
-                      attributeName="r"
-                      values={`${r + 6};${r + 10};${r + 6}`}
-                      dur="2s"
-                      repeatCount="indefinite"
-                    />
-                    <animate
-                      attributeName="opacity"
-                      values="0.6;0.3;0.6"
-                      dur="2s"
-                      repeatCount="indefinite"
-                    />
-                  </circle>
+                    opacity={0.45}
+                    filter="url(#station-glow)"
+                  />
                 )}
-                {/* Station circle */}
                 <circle
                   cx={station.x}
                   cy={station.y}
-                  r={isHovered || isSelected || isHighlighted ? r + 3 : r}
-                  fill={isTransfer ? 'white' : (line?.color || '#999')}
-                  stroke={isHighlighted || isSelected ? '#4A90D9' : (isTransfer ? '#333' : 'white')}
-                  strokeWidth={isHighlighted || isSelected ? 3 : (isTransfer ? 2.5 : 2)}
-                  className="cursor-pointer transition-all"
-                  style={{ filter: isHovered ? 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' : undefined }}
+                  r={isHovered || isSelected ? radius + 2 : radius}
+                  fill={isTransfer ? "#FFFFFF" : (line?.color || "#8E8E93")}
+                  stroke={isTransfer ? "#2D3748" : "#FFFFFF"}
+                  strokeWidth={isTransfer ? 2.25 : 1.8}
+                  className="cursor-pointer"
+                  onPointerDown={event => event.stopPropagation()}
                   onPointerEnter={() => setHoveredStation(station.name)}
                   onPointerLeave={() => setHoveredStation(null)}
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  onClick={event => {
+                    event.stopPropagation();
                     handleStationClick(station.name);
                   }}
                 />
-                {/* Inner dot for transfer stations */}
-                {isTransfer && (
-                  <circle
-                    cx={station.x}
-                    cy={station.y}
-                    r={r - 3}
-                    fill={isHighlighted || isSelected ? '#4A90D9' : '#333'}
-                    className="pointer-events-none"
-                  />
-                )}
-                {/* Station label */}
-                {(showAllLabels || (showLabels && (isTransfer || isHovered || isHighlighted || isSelected)) || (showTransferLabelsOnly && isTransfer) || isHighlighted || isSelected) && (
+                <circle
+                  cx={station.x}
+                  cy={station.y}
+                  r={Math.max(16, radius + 9)}
+                  fill="transparent"
+                  className="cursor-pointer"
+                  onPointerDown={event => event.stopPropagation()}
+                  onPointerEnter={() => setHoveredStation(station.name)}
+                  onPointerLeave={() => setHoveredStation(null)}
+                  onClick={event => {
+                    event.stopPropagation();
+                    handleStationClick(station.name);
+                  }}
+                >
+                  <title>{station.name}</title>
+                </circle>
+                {showLabel && (
                   <text
                     x={station.x}
-                    y={station.y - r - 5}
+                    y={station.y - radius - 7}
                     textAnchor="middle"
-                    fontSize={viewBox.w < 600 ? 11 : (isHighlighted || isSelected ? 10 : 8)}
-                    fontWeight={isTransfer || isHighlighted || isSelected ? 600 : 400}
-                    fill={isHighlighted || isSelected ? '#4A90D9' : '#1B2838'}
-                    className="pointer-events-none select-none"
-                    style={{ fontFamily: 'Pretendard Variable, sans-serif' }}
+                    fontSize={viewBox.w < 650 ? 12 : 10}
+                    fontWeight={isTransfer || isSelected ? 700 : 500}
+                    fill={isSelected ? "#1B2838" : "#2D3748"}
+                    paintOrder="stroke"
+                    stroke="#F7F8FA"
+                    strokeWidth={4}
+                    className="pointer-events-none"
+                    style={{ fontFamily: "Pretendard Variable, Pretendard, sans-serif" }}
                   >
                     {station.name}
                   </text>
@@ -421,53 +390,28 @@ export default function MetroMap({
             );
           })}
         </g>
-
-        {/* Hovered station tooltip */}
-        {hoveredStation && !showLabels && !transferStations.has(hoveredStation) && (() => {
-          const s = uniqueStations.find(st => st.name === hoveredStation);
-          if (!s) return null;
-          return (
-            <g>
-              <rect
-                x={s.x - 40}
-                y={s.y - stationRadius - 24}
-                width={80}
-                height={18}
-                rx={4}
-                fill="rgba(27, 40, 56, 0.9)"
-              />
-              <text
-                x={s.x}
-                y={s.y - stationRadius - 12}
-                textAnchor="middle"
-                fontSize={10}
-                fill="white"
-                fontWeight={500}
-                style={{ fontFamily: 'Pretendard Variable, sans-serif' }}
-              >
-                {hoveredStation}
-              </text>
-            </g>
-          );
-        })()}
       </svg>
 
-      {/* Zoom controls */}
       <div className="absolute bottom-4 right-4 flex flex-col gap-2">
         <button
-          onClick={zoomIn}
+          onClick={() => zoomAt(0.78)}
           className="w-9 h-9 bg-white/95 backdrop-blur-sm rounded-xl shadow-md flex items-center justify-center text-[#1B2838] font-bold text-base btn-press"
+          aria-label="확대"
         >
           +
         </button>
         <button
-          onClick={zoomOut}
+          onClick={() => zoomAt(1.25)}
           className="w-9 h-9 bg-white/95 backdrop-blur-sm rounded-xl shadow-md flex items-center justify-center text-[#1B2838] font-bold text-base btn-press"
+          aria-label="축소"
         >
-          −
+          -
         </button>
         <button
-          onClick={resetView}
+          onClick={() => {
+            setSelectedStation(null);
+            setViewBox(INITIAL_VIEW_BOX);
+          }}
           className="w-9 h-9 bg-white/95 backdrop-blur-sm rounded-xl shadow-md flex items-center justify-center text-[10px] text-[#8E8E93] font-medium btn-press"
         >
           전체

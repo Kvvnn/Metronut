@@ -18,21 +18,7 @@ export default function MapView() {
   const [, setLocation] = useLocation();
   const [viewMode, setViewMode] = useState<ViewMode>("map");
   const [selectedLine, setSelectedLine] = useState<string | null>(null);
-  const [selectedLines, setSelectedLines] = useState<string[]>([]);
   const lines = getAllLines();
-
-  const handleLineFilter = (lineId: string) => {
-    setSelectedLines(prev => {
-      if (prev.includes(lineId)) {
-        return prev.filter(id => id !== lineId);
-      }
-      return [...prev, lineId];
-    });
-  };
-
-  const clearFilter = () => {
-    setSelectedLines([]);
-  };
 
   return (
     <div className="min-h-screen bg-background pb-20 flex flex-col">
@@ -87,43 +73,9 @@ export default function MapView() {
             transition={{ duration: 0.2 }}
             className="flex-1 flex flex-col"
           >
-            {/* Line filter chips */}
-            <div className="px-4 mb-2">
-              <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-2">
-                <button
-                  onClick={clearFilter}
-                  className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all ${
-                    selectedLines.length === 0
-                      ? "bg-[#1B2838] text-white"
-                      : "bg-[#F5F5F7] text-[#1B2838]"
-                  }`}
-                >
-                  전체
-                </button>
-                {lines.map(line => (
-                  <button
-                    key={line.id}
-                    onClick={() => handleLineFilter(line.id)}
-                    className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all ${
-                      selectedLines.includes(line.id)
-                        ? "text-white shadow-sm"
-                        : "bg-[#F5F5F7] text-[#1B2838]"
-                    }`}
-                    style={
-                      selectedLines.includes(line.id)
-                        ? { backgroundColor: line.color }
-                        : {}
-                    }
-                  >
-                    {line.shortName}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Map container */}
             <div className="flex-1 min-h-[60vh] mx-2 rounded-2xl overflow-hidden border border-[#F0F0F2]">
-              <MetroMap selectedLines={selectedLines} />
+              <MetroMap />
             </div>
           </motion.div>
         ) : (
