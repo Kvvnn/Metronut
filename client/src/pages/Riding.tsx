@@ -58,26 +58,14 @@ interface RidingPayload {
 interface EnrichedTrain extends TrainPosition {
   posIdxOriented: number;
   sameDirection: boolean | null;
-  /**
-   * 시뮬 전용: posIdxOriented (가장 가까운 역) 기준 진행률.
-   * -0.5 = 직전 역에서 막 출발, 0 = 역 위, +0.5 = 다음 역 직전.
-   * progress가 0.5를 넘으면 posIdxOriented가 1 증가하고 progress는 -0.5로 reset.
-   */
-  transitProgress?: number;
-  /** 시뮬 전용: 트레인별 속도 (역간 1구간을 1/speed tick 만에 통과) */
-  simSpeed?: number;
-  /** 시뮬 전용: 정차 시 남은 dwell tick 수 */
-  dwellTicks?: number;
 }
 
 // 가짜 열차 식별 prefix. 실데이터 API trainNo는 보통 4자리 숫자라 충돌 X.
 const SIM_TRAIN_PREFIX = "S";
-const SIM_TICK_MS = 2000;
-const SIM_TRAIN_COUNT = 8;
 
 /**
  * 시뮬레이션 모드용 가짜 열차 생성.
- * 노선 전체에 트레인 분산 배치. 트레인별 다른 progress + 속도로 다양성 확보.
+ * 노선 전체에 6대 분산 배치. 모두 우리 방향 (sameDirection: true).
  */
 function generateFakeTrains(
   lineStations: { name: string }[],
@@ -86,107 +74,45 @@ function generateFakeTrains(
   if (lineStations.length === 0) return [];
   const lastIdx = lineStations.length - 1;
   const destination = lineStations[lastIdx]?.name ?? "";
+  const COUNT = 6;
   const trains: EnrichedTrain[] = [];
-  for (let i = 0; i < SIM_TRAIN_COUNT; i++) {
-    const posIdx = Math.floor((lastIdx * (i + 1)) / (SIM_TRAIN_COUNT + 1));
+  for (let i = 0; i < COUNT; i++) {
+    const posIdx = Math.floor((lastIdx * (i + 1)) / (COUNT + 1));
     const station = lineStations[posIdx];
     if (!station) continue;
-    // 트레인마다 progress를 분산: 일부는 정차, 일부는 운행 중
-    const initialProgress = ((i * 0.31) % 1) - 0.5; // -0.5 ~ +0.5
-    const speed = 0.14 + (i % 3) * 0.025; // 0.14 / 0.165 / 0.19
-    const trainStatus =
-      Math.abs(initialProgress) < 0.05
-        ? "1"
-        : initialProgress < -0.15
-        ? "0"
-        : "2";
     trains.push({
       trainNo: `${SIM_TRAIN_PREFIX}${2001 + i}`,
       stationName: station.name,
       updnLine,
-      trainStatus,
+      trainStatus: ["0", "1", "2"][i % 3], // 진입/정차/출발 섞임
       destination,
       receivedAt: new Date().toISOString(),
       posIdxOriented: posIdx,
       sameDirection: true,
-      transitProgress: initialProgress,
-      simSpeed: speed,
-      dwellTicks: trainStatus === "1" ? 1 : 0,
     });
   }
   return trains;
 }
 
 /**
- * 시뮬 트레인 한 tick 진행 (SIM_TICK_MS마다).
- *  - dwellTicks > 0: 정차 유지, dwell-1
- *  - progress += simSpeed
- *  - progress 0 근처 진입 시 정차(dwell=1~2) 처리
- *  - progress >= 0.5: posIdxOriented++, progress -= 1
- *  - 종착역(lastIdx) 도달 시 정지
+ * 가짜 열차 한 정거장씩 전진. 종착 도달하면 그대로 정지.
+ * status 0→1→2 사이클 (진입→정차→출발).
  */
-function tickFakeTrains(
+function advanceFakeTrains(
   trains: EnrichedTrain[],
   lineStations: { name: string }[],
 ): EnrichedTrain[] {
   const lastIdx = lineStations.length - 1;
   return trains.map(t => {
-    const speed = t.simSpeed ?? 0.16;
-    const dwell = t.dwellTicks ?? 0;
-    const progress = t.transitProgress ?? 0;
-
-    // 종착 정지
-    if (t.posIdxOriented >= lastIdx && progress >= 0) {
-      return {
-        ...t,
-        transitProgress: 0,
-        trainStatus: "1",
-        dwellTicks: 0,
-        receivedAt: new Date().toISOString(),
-      };
-    }
-
-    // 정차 dwell 소진
-    if (dwell > 0) {
-      return {
-        ...t,
-        dwellTicks: dwell - 1,
-        trainStatus: "1",
-        receivedAt: new Date().toISOString(),
-      };
-    }
-
-    let newProgress = progress + speed;
-    let posIdx = t.posIdxOriented;
-    let stationName = t.stationName;
-    let newDwell = 0;
-
-    // 다음 역으로 reparent (progress 0.5 넘으면 가장 가까운 역이 다음)
-    if (newProgress >= 0.5) {
-      posIdx = Math.min(posIdx + 1, lastIdx);
-      newProgress -= 1; // -0.5 reset
-      stationName = lineStations[posIdx]?.name ?? stationName;
-    }
-
-    // 역 중심 진입 시 snap & 정차
-    let status: string;
-    if (newProgress > -speed * 0.6 && newProgress < speed * 0.6) {
-      newProgress = 0;
-      newDwell = 1 + Math.floor(Math.random() * 2); // 2~6초 정차
-      status = "1";
-    } else if (newProgress < 0) {
-      status = "0"; // 진입 중
-    } else {
-      status = "2"; // 출발 직후/운행
-    }
-
+    if (t.posIdxOriented >= lastIdx) return t;
+    const nextIdx = t.posIdxOriented + 1;
+    const nextStation = lineStations[nextIdx];
+    if (!nextStation) return t;
     return {
       ...t,
-      posIdxOriented: posIdx,
-      stationName,
-      transitProgress: newProgress,
-      dwellTicks: newDwell,
-      trainStatus: status,
+      posIdxOriented: nextIdx,
+      stationName: nextStation.name,
+      trainStatus: t.trainStatus === "1" ? "2" : t.trainStatus === "2" ? "0" : "1",
       receivedAt: new Date().toISOString(),
     };
   });
@@ -439,17 +365,16 @@ export default function Riding() {
     if (idx >= 0) setCurrentIdx(idx);
   }, [availableTrains, ridingData]);
 
-  // ===== 시뮬레이션 모드: SIM_TICK_MS마다 가짜 열차들 부드럽게 진행 =====
-  // 매 tick 작은 progress 증가 + framer-motion linear transition으로 연속 움직임.
+  // ===== 시뮬레이션 모드: 8초마다 가짜 열차들 한 정거장씩 전진 =====
   useEffect(() => {
     if (!isSimulated) return;
     if (orientedLineStations.stations.length === 0) return;
     const timer = setInterval(() => {
       setAvailableTrains(prev => {
         if (prev.length === 0 || !prev.every(t => isSimTrainNo(t.trainNo))) return prev;
-        return tickFakeTrains(prev, orientedLineStations.stations);
+        return advanceFakeTrains(prev, orientedLineStations.stations);
       });
-    }, SIM_TICK_MS);
+    }, 8000);
     return () => clearInterval(timer);
   }, [isSimulated, orientedLineStations]);
 
@@ -1431,32 +1356,24 @@ function CompactTrainPin({
   onSelect: () => void;
   stationWidth: number;
 }) {
-  // 위치 시각화:
-  //  - 시뮬 트레인 (transitProgress != null): progress * stationWidth로 픽셀 단위 보간
-  //    -0.5(이전 역 직후) ~ 0(역 위) ~ +0.5(다음 역 직전) → -stationWidth/2 ~ +stationWidth/2
-  //  - 실데이터 트레인: trainStatus 기반 추정 offset (정확한 위치 없음)
-  const hasProgress = typeof train.transitProgress === "number";
-  const transitOffsetPx = hasProgress
-    ? (train.transitProgress as number) * stationWidth
-    : train.trainStatus === "2"
-    ? stationWidth * 0.4
-    : train.trainStatus === "0"
-    ? stationWidth * -0.3
-    : 0;
+  // trainStatus: 0=진입(approaching this station from prev), 1=정차, 2=출발(departed toward next)
+  // 역과 역 사이 위치 시각화: 진입은 살짝 왼쪽, 출발은 오른쪽으로 이동
+  const transitOffsetPx =
+    train.trainStatus === "2"
+      ? stationWidth * 0.4 // 출발 직후 → 다음 역 방향(우측)
+      : train.trainStatus === "0"
+      ? stationWidth * -0.3 // 진입 중 → 이전 역 방향(좌측)에서 다가옴
+      : 0; // 정차 or unknown → 역 위치 그대로
 
   const pulsing = train.trainStatus === "0" || train.trainStatus === "1";
   const inTransit = train.trainStatus === "2" || train.trainStatus === "0";
-  // 시뮬은 tick 주기에 맞춰 linear로 부드럽게 흐름, 실데이터는 spring-like 짧은 transition
-  const motionTransition = hasProgress
-    ? { duration: SIM_TICK_MS / 1000, ease: "linear" as const }
-    : { duration: 0.4, ease: [0.23, 1, 0.32, 1] as const };
 
   return (
     <motion.button
       layout
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0, x: transitOffsetPx }}
-      transition={motionTransition}
+      transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
       onClick={onSelect}
       className="relative btn-press flex items-center"
       title={`${train.trainNo}호 · ${train.destination || "—"} 방면${
