@@ -3,15 +3,13 @@
  * Design: iOS 스타일 설정 리스트 - Seoul Flow
  * - 알림 설정
  * - 선호 경로 설정
- * - API 키 설정 (실시간 정보용)
  * - 2차 기능 더미: 다크모드, 언어, 데이터 관리
  * - 앱 정보
  */
-import { useState, useEffect } from "react";
-import { Bell, Route, Info, ChevronRight, Moon, Vibrate, Globe, Trash2, Database, Shield, ExternalLink } from "lucide-react";
+import { useState } from "react";
+import { Bell, Route, Info, ChevronRight, Moon, Vibrate, Globe, Trash2, Database, Shield } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { checkApiKeyStatus } from "@/lib/realtimeApi";
 import { useTheme } from "@/contexts/ThemeContext";
 
 export default function Settings() {
@@ -19,14 +17,8 @@ export default function Settings() {
   const [alarmVibrate, setAlarmVibrate] = useState(true);
   const [alarmBefore, setAlarmBefore] = useState("1");
   const [preferRoute, setPreferRoute] = useState("fastest");
-  const [showApiInfo, setShowApiInfo] = useState(false);
-  const [apiConfigured, setApiConfigured] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === "dark";
-
-  useEffect(() => {
-    checkApiKeyStatus().then(hasKey => setApiConfigured(hasKey));
-  }, []);
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -36,6 +28,27 @@ export default function Settings() {
           설정
         </h1>
       </header>
+
+      <motion.section
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
+        className="px-4 mt-2"
+      >
+        <div className="ios-card flex items-center gap-4 p-4">
+          <img
+            src="/app-icon-192.png"
+            alt="메트로넛 앱 아이콘"
+            className="h-16 w-16 shrink-0 rounded-[18px] shadow-sm"
+          />
+          <div className="min-w-0">
+            <p className="text-[17px] font-bold text-[#1B2838]">메트로넛</p>
+            <p className="mt-0.5 text-[13px] leading-5 text-[#8E8E93]">
+              서울 지하철 경로와 탑승 안내
+            </p>
+          </div>
+        </div>
+      </motion.section>
 
       {/* Notification Settings */}
       <motion.section
@@ -124,77 +137,6 @@ export default function Settings() {
               ))}
             </div>
           </div>
-        </div>
-      </motion.section>
-
-      {/* API Key Settings - Server Proxy */}
-      <motion.section
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.2, ease: [0.23, 1, 0.32, 1] }}
-        className="px-4 mt-6"
-      >
-        <h3 className="text-[13px] font-semibold text-[#8E8E93] uppercase tracking-wider mb-2 px-1">
-          실시간 정보
-        </h3>
-        <div className="ios-card divide-y divide-[#F0F0F2]">
-          <button
-            className="w-full flex items-center justify-between px-4 py-3.5 btn-press"
-            onClick={() => setShowApiInfo(!showApiInfo)}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-[#FFFBEB] flex items-center justify-center">
-                <Shield size={16} className="text-[#4A90D9]" />
-              </div>
-              <div className="text-left">
-                <span className="text-[15px] text-[#1B2838] block">실시간 도착 정보</span>
-                <span className="text-[12px] text-[#8E8E93]">
-                  {apiConfigured ? "✓ 서버에서 안전하게 관리 중" : "시뮬레이션 모드"}
-                </span>
-              </div>
-            </div>
-            <ChevronRight size={16} className={`text-[#C7C7CC] transition-transform ${showApiInfo ? "rotate-90" : ""}`} />
-          </button>
-
-          {showApiInfo && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              className="px-4 py-3"
-            >
-              <div className="bg-[#F0F7FF] rounded-lg p-3 mb-3">
-                <p className="text-[12px] text-[#1B2838] font-medium mb-1">보안 안내</p>
-                <p className="text-[11px] text-[#6B7280] leading-relaxed">
-                  API 키는 서버 환경변수에 안전하게 저장되어 있습니다. 
-                  클라이언트에 노출되지 않으며, 서버를 통해 프록시됩니다.
-                </p>
-              </div>
-              {apiConfigured ? (
-                <div className="flex items-center gap-2 text-[12px] text-[#27AE60]">
-                  <div className="w-2 h-2 rounded-full bg-[#27AE60] animate-pulse" />
-                  실시간 데이터 활성화됨
-                </div>
-              ) : (
-                <div>
-                  <p className="text-[12px] text-[#8E8E93] mb-2">
-                    현재 시뮬레이션 데이터를 사용 중입니다.
-                  </p>
-                  <a
-                    href="https://data.seoul.go.kr/dataList/OA-12764/F/1/datasetView.do"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-[12px] text-[#4A90D9]"
-                  >
-                    <ExternalLink size={12} />
-                    서울 열린데이터 광장에서 API 키 발급
-                  </a>
-                  <p className="text-[11px] text-[#8E8E93] mt-2 leading-relaxed">
-                    관리자에게 API 키를 전달하면 서버에 등록해 드립니다.
-                  </p>
-                </div>
-              )}
-            </motion.div>
-          )}
         </div>
       </motion.section>
 

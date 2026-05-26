@@ -36,7 +36,7 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light" switchable>
         <TooltipProvider>
-          <Toaster position="top-center" />
+          <Toaster position="bottom-center" offset={80} />
           <div className="max-w-[480px] mx-auto min-h-screen bg-background relative">
             <Router />
             <TabBar />

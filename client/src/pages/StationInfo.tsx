@@ -4,15 +4,14 @@
  * - 실시간 열차 도착시간 (API 연동)
  * - 출구 정보
  * - 환승 정보
- * - 혼잡도 (2차 기능 더미)
  */
 import { useState, useEffect } from "react";
 import { useParams } from "wouter";
-import { ArrowLeft, Train, Clock, DoorOpen, ArrowUpDown, Star, Users, RefreshCw } from "lucide-react";
+import { ArrowLeft, Train, Clock, DoorOpen, ArrowUpDown, Star, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
 import { getStationInfo, getLineInfo } from "@/lib/pathfinder";
-import { getRealtimeArrivals, getCongestion, checkApiKeyStatus } from "@/lib/realtimeApi";
-import type { ArrivalInfo, CongestionInfo } from "@/lib/realtimeApi";
+import { getRealtimeArrivals, checkApiKeyStatus } from "@/lib/realtimeApi";
+import type { ArrivalInfo } from "@/lib/realtimeApi";
 import { toast } from "sonner";
 
 export default function StationInfo() {
@@ -21,8 +20,6 @@ export default function StationInfo() {
   const stations = getStationInfo(decodedName);
   const [selectedLine, setSelectedLine] = useState(stations[0]?.lineId || "");
   const [arrivals, setArrivals] = useState<ArrivalInfo[]>([]);
-  const [congestion, setCongestion] = useState<CongestionInfo[]>([]);
-  const [congestionSimulated, setCongestionSimulated] = useState(true);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isSimulated, setIsSimulated] = useState(true);
@@ -31,12 +28,8 @@ export default function StationInfo() {
 
   useEffect(() => {
     loadArrivals();
-    getCongestion(decodedName, selectedLine).then(({ cars, isSimulated }) => {
-      setCongestion(cars);
-      setCongestionSimulated(isSimulated);
-    });
     checkApiKeyStatus().then(hasKey => setIsSimulated(!hasKey));
-  }, [decodedName, selectedLine]);
+  }, [decodedName, selectedLine, stations]);
 
   const loadArrivals = async () => {
     setLoading(true);
@@ -211,48 +204,6 @@ export default function StationInfo() {
           </div>
         </motion.div>
       )}
-
-      {/* Congestion (2차 기능 더미) */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.15, ease: [0.23, 1, 0.32, 1] }}
-        className="px-4 mt-4"
-      >
-        <h3 className="text-[14px] font-semibold text-[#1B2838] mb-3 flex items-center gap-2">
-          <Users size={16} className="text-[#9B59B6]" />
-          칸별 혼잡도
-          {congestionSimulated && (
-            <span className="text-[10px] bg-[#FFF3EB] text-[#E67E22] px-1.5 py-0.5 rounded ml-1">시뮬레이션</span>
-          )}
-        </h3>
-        <div className="ios-card p-4">
-          <div className="flex items-end gap-1 h-16">
-            {congestion.map((car, idx) => (
-              <div key={idx} className="flex-1 flex flex-col items-center gap-1">
-                <div
-                  className="w-full rounded-sm transition-all"
-                  style={{
-                    height: `${car.percentage * 0.6}px`,
-                    backgroundColor:
-                      car.level === "여유" ? "#27AE60" :
-                      car.level === "보통" ? "#F1C40F" :
-                      car.level === "혼잡" ? "#E67E22" : "#E74C3C",
-                    opacity: 0.5,
-                  }}
-                />
-                <span className="text-[9px] text-[#8E8E93]">{car.carNumber}</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex items-center justify-center gap-4 mt-3 text-[10px] text-[#8E8E93]">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#27AE60]" />여유</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#F1C40F]" />보통</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#E67E22]" />혼잡</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#E74C3C]" />매우혼잡</span>
-          </div>
-        </div>
-      </motion.div>
 
       {/* Exit info */}
       <motion.div

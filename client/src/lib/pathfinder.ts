@@ -177,6 +177,77 @@ export function findRoutes(fromName: string, toName: string): Route[] {
   return routes;
 }
 
+export function findRoutesVia(fromName: string, viaName: string, toName: string): Route[] {
+  if (!viaName || viaName === fromName || viaName === toName) {
+    return findRoutes(fromName, toName);
+  }
+
+  const firstLegRoutes = findRoutes(fromName, viaName);
+  const secondLegRoutes = findRoutes(viaName, toName);
+  if (firstLegRoutes.length === 0 || secondLegRoutes.length === 0) return [];
+
+  const combinedRoutes: Route[] = [];
+
+  for (const firstLeg of firstLegRoutes.slice(0, 3)) {
+    for (const secondLeg of secondLegRoutes.slice(0, 3)) {
+      const combined = combineRoutesAtVia(firstLeg, secondLeg);
+      if (!isDuplicateRoute(combinedRoutes, combined)) {
+        combinedRoutes.push(combined);
+      }
+    }
+  }
+
+  return combinedRoutes
+    .sort((a, b) => {
+      if (a.totalTime !== b.totalTime) return a.totalTime - b.totalTime;
+      if (a.transferCount !== b.transferCount) return a.transferCount - b.transferCount;
+      return a.stationCount - b.stationCount;
+    })
+    .slice(0, 3);
+}
+
+function combineRoutesAtVia(firstLeg: Route, secondLeg: Route): Route {
+  const firstRide = [...firstLeg.segments].reverse().find(segment => !segment.isTransfer);
+  const secondRide = secondLeg.segments.find(segment => !segment.isTransfer);
+  const bridgeSegments: RouteSegment[] = [];
+
+  if (
+    firstRide &&
+    secondRide &&
+    firstRide.toStation.id !== secondRide.fromStation.id
+  ) {
+    bridgeSegments.push({
+      fromStation: firstRide.toStation,
+      toStation: secondRide.fromStation,
+      lineId: secondRide.lineId,
+      lineName: '경유 환승',
+      lineColor: '#888',
+      stations: [firstRide.toStation, secondRide.fromStation],
+      time: 3,
+      isTransfer: true,
+    });
+  }
+
+  const segments = [
+    ...firstLeg.segments,
+    ...bridgeSegments,
+    ...secondLeg.segments,
+  ];
+  const transferCount = segments.filter(segment => segment.isTransfer).length;
+  const stationCount = segments
+    .filter(segment => !segment.isTransfer)
+    .reduce((sum, segment) => sum + segment.stations.length - 1, 0);
+
+  return {
+    segments,
+    totalTime: Math.round(segments.reduce((sum, segment) => sum + segment.time, 0)),
+    transferCount,
+    stationCount,
+    fare: calculateFare(stationCount),
+    walkTime: transferCount * 3,
+  };
+}
+
 function isDuplicateRoute(routes: Route[], newRoute: Route): boolean {
   return routes.some(r => 
     r.totalTime === newRoute.totalTime && 

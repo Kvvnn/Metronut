@@ -8,7 +8,7 @@ import { useState, useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
 import { ArrowLeft, Clock, Repeat, Footprints, ChevronRight, Zap, Heart, Minus } from "lucide-react";
 import { motion } from "framer-motion";
-import { findRoutes, calculateArrivalTime, getLineInfo } from "@/lib/pathfinder";
+import { findRoutes, findRoutesVia, calculateArrivalTime, getLineInfo } from "@/lib/pathfinder";
 import type { Route } from "@/lib/pathfinder";
 
 const routeLabels = [
@@ -21,6 +21,7 @@ export default function RouteResult() {
   const [, setLocation] = useLocation();
   const searchParams = new URLSearchParams(useSearch());
   const from = searchParams.get("from") || "";
+  const via = searchParams.get("via") || "";
   const to = searchParams.get("to") || "";
   const [routes, setRoutes] = useState<Route[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,12 +31,12 @@ export default function RouteResult() {
       setLoading(true);
       // 약간의 딜레이로 로딩 UX
       setTimeout(() => {
-        const found = findRoutes(from, to);
+        const found = via ? findRoutesVia(from, via, to) : findRoutes(from, to);
         setRoutes(found);
         setLoading(false);
       }, 300);
     }
-  }, [from, to]);
+  }, [from, via, to]);
 
   return (
     <div className="min-h-screen bg-background pb-6">
@@ -47,7 +48,7 @@ export default function RouteResult() {
           </button>
           <div className="flex-1 text-center">
             <span className="text-[15px] font-semibold text-[#1B2838]">
-              {from} → {to}
+              {from} → {via ? `${via} → ` : ""}{to}
             </span>
           </div>
           <div className="w-8" />
@@ -80,7 +81,11 @@ export default function RouteResult() {
               >
                 <button
                   className="w-full ios-card p-4 text-left btn-press"
-                  onClick={() => setLocation(`/route-detail/${idx}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)}
+                  onClick={() => {
+                    const params = new URLSearchParams({ from, to });
+                    if (via) params.set("via", via);
+                    setLocation(`/route-detail/${idx}?${params.toString()}`);
+                  }}
                 >
                   {/* Label */}
                   <div className="flex items-center gap-1.5 mb-2">

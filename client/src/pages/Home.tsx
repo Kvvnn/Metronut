@@ -8,11 +8,14 @@
  * - 실시간 도착 정보는 여기서 제거 (경로 선택 후에 표시)
  * - 최근 검색은 하단에 컴팩트하게
  */
-import { useLocation } from "wouter";
-import { Search, ArrowRightLeft, Clock, Star, ChevronRight, X } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useState, useCallback } from "react";
+import { useLocation, useSearch } from "wouter";
+import { Search, ArrowRightLeft, Clock, Star, ChevronRight, Plus, X } from "lucide-react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { useState, useCallback, useEffect } from "react";
 import MetroMap from "@/components/MetroMap";
+import type { StationRole } from "@/components/MetroMap";
+import RouteConfirmDialog from "@/components/RouteConfirmDialog";
+import StationSearchDropdown from "@/components/StationSearchDropdown";
 
 const recentRoutes = [
   { from: "강남", to: "홍대입구", time: "32분" },
@@ -27,32 +30,73 @@ const favoriteRoutes = [
 
 export default function Home() {
   const [, setLocation] = useLocation();
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const search = useSearch();
+  const searchParams = new URLSearchParams(search);
+  const [from, setFrom] = useState(searchParams.get("from") || "");
+  const [to, setTo] = useState(searchParams.get("to") || "");
+  const [via, setVia] = useState(searchParams.get("via") || "");
+  const [isViaExpanded, setIsViaExpanded] = useState(Boolean(searchParams.get("via")));
   const [showRecent, setShowRecent] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
+  const showViaField = isViaExpanded || Boolean(via);
+  const viaFieldTransition = {
+    duration: prefersReducedMotion ? 0.01 : 0.24,
+    ease: [0.22, 1, 0.36, 1] as const,
+  };
+  // confirm 팝업이 dismiss됐는지 (취소 누르면 true, 새 선택 시 false로 리셋)
+  const [confirmDismissed, setConfirmDismissed] = useState(false);
+  // 검색 dropdown 상태
+  const [searchField, setSearchField] = useState<"from" | "via" | "to" | null>(null);
 
-  // 노선도에서 역을 선택했을 때
-  const handleStationSelect = useCallback((name: string) => {
-    if (!from) {
+  useEffect(() => {
+    const nextVia = searchParams.get("via") || "";
+    setFrom(searchParams.get("from") || "");
+    setTo(searchParams.get("to") || "");
+    setVia(nextVia);
+    setIsViaExpanded(Boolean(nextVia));
+  }, [search]);
+
+  const handleStationRoleSelect = useCallback((name: string, role: StationRole) => {
+    setConfirmDismissed(false);
+    if (role === "from") {
       setFrom(name);
-    } else if (!to) {
+      if (to === name) setTo("");
+      if (via === name) setVia("");
+    } else if (role === "to") {
       setTo(name);
-      // 둘 다 선택되면 자동으로 경로 검색
-      setTimeout(() => {
-        setLocation(`/route-result?from=${encodeURIComponent(from)}&to=${encodeURIComponent(name)}`);
-      }, 300);
+      if (from === name) setFrom("");
+      if (via === name) setVia("");
     } else {
-      // 이미 둘 다 있으면 출발역을 교체
-      setFrom(name);
-      setTo("");
+      setVia(name);
+      setIsViaExpanded(true);
+      if (from === name) setFrom("");
+      if (to === name) setTo("");
     }
-  }, [from, to, setLocation]);
+  }, [from, to, via]);
+
+  const handleRevealVia = useCallback(() => {
+    setIsViaExpanded(true);
+    setConfirmDismissed(true);
+  }, []);
+
+  const handleClearVia = useCallback(() => {
+    setVia("");
+    setIsViaExpanded(false);
+  }, []);
+
+  const buildRouteResultPath = useCallback(() => {
+    const params = new URLSearchParams({ from, to });
+    if (via) params.set("via", via);
+    return `/route-result?${params.toString()}`;
+  }, [from, to, via]);
 
   const handleSearch = () => {
     if (from && to) {
-      setLocation(`/route-result?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+      setLocation(buildRouteResultPath());
+    } else if (!from) {
+      setSearchField("from");
     } else {
-      setLocation(`/search?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+      setSearchField("to");
     }
   };
 
@@ -62,7 +106,10 @@ export default function Home() {
   };
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div
+      className="h-screen flex flex-col overflow-hidden"
+      style={{ paddingBottom: "calc(52px + env(safe-area-inset-bottom, 0px))" }}
+    >
       {/* Floating Search Card - 상단 */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -76,7 +123,7 @@ export default function Home() {
             <div className="flex flex-col gap-1.5 flex-1 min-w-0">
               <div
                 className="flex items-center gap-2 cursor-pointer"
-                onClick={() => setLocation(`/search?type=from&to=${encodeURIComponent(to)}`)}
+                onClick={() => setSearchField("from")}
               >
                 <div className="w-2 h-2 rounded-full bg-[#4A90D9] shrink-0" />
                 <span className={`text-[14px] truncate ${from ? "text-[#1B2838] font-medium" : "text-[#8E8E93]"}`}>
@@ -88,10 +135,68 @@ export default function Home() {
                   </button>
                 )}
               </div>
-              <div className="border-t border-[#E5E5EA] mx-2" />
+              <div className="relative flex min-h-6 items-center">
+                <div className="ml-[3px] h-5 w-px rounded-full bg-[#D9D9DE]" />
+                <div className="ml-5 flex-1 border-t border-[#E5E5EA]" />
+                {!showViaField && (
+                  <button
+                    type="button"
+                    onClick={handleRevealVia}
+                    className="btn-press absolute left-[-7px] top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-[#CFE9D9] bg-white text-[#27AE60] shadow-sm transition-colors hover:bg-[#EAF7EF]"
+                    aria-label="경유역 영역 펼치기"
+                    aria-expanded={showViaField}
+                  >
+                    <Plus size={14} strokeWidth={2.4} />
+                  </button>
+                )}
+              </div>
+              <AnimatePresence initial={false}>
+                {showViaField && (
+                  <motion.div
+                    key="via-field"
+                    initial={{ opacity: 0, y: -8, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: "auto" }}
+                    exit={{ opacity: 0, y: -6, height: 0 }}
+                    transition={viaFieldTransition}
+                    className="overflow-hidden"
+                  >
+                    <div
+                      className="flex min-h-9 cursor-pointer items-center gap-2 rounded-xl bg-[#EAF7EF] px-2.5 py-2"
+                      onClick={() => setSearchField("via")}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSearchField("via");
+                        }
+                      }}
+                    >
+                      <div className="h-2 w-2 shrink-0 rounded-full bg-[#27AE60]" />
+                      <span className={`truncate text-[14px] ${via ? "font-medium text-[#1B2838]" : "text-[#4F8A63]"}`}>
+                        {via || "경유역"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleClearVia();
+                        }}
+                        className="btn-press ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#6D9B7A]"
+                        aria-label="경유역 영역 닫기"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              {showViaField && (
+                <div className="mx-2 border-t border-[#E5E5EA]" />
+              )}
               <div
                 className="flex items-center gap-2 cursor-pointer"
-                onClick={() => setLocation(`/search?type=to&from=${encodeURIComponent(from)}`)}
+                onClick={() => setSearchField("to")}
               >
                 <div className="w-2 h-2 rounded-full bg-[#E74C3C] shrink-0" />
                 <span className={`text-[14px] truncate ${to ? "text-[#1B2838] font-medium" : "text-[#8E8E93]"}`}>
@@ -139,10 +244,34 @@ export default function Home() {
       {/* Metro Map - 메인 영역 */}
       <div className="flex-1 relative">
         <MetroMap
-          onStationSelect={handleStationSelect}
-          highlightedStation={from || to || undefined}
+          onStationRoleSelect={handleStationRoleSelect}
+          highlightedStation={from || to || via || undefined}
+          selections={{ from, via, to }}
         />
       </div>
+
+      {/* Route confirmation overlay */}
+      <RouteConfirmDialog
+        open={!!from && !!to && !confirmDismissed}
+        from={from}
+        via={via}
+        to={to}
+        onConfirm={() => setLocation(buildRouteResultPath())}
+        onCancel={() => setConfirmDismissed(true)}
+      />
+
+      {/* 역 검색 dropdown (inline, navigation 없음) */}
+      <StationSearchDropdown
+        open={searchField !== null}
+        field={searchField}
+        onSelect={name => {
+          if (!searchField) return;
+          handleStationRoleSelect(name, searchField);
+          if (searchField === "via") setIsViaExpanded(true);
+          setSearchField(null);
+        }}
+        onClose={() => setSearchField(null)}
+      />
 
       {/* Bottom Quick Access - 최근/즐겨찾기 */}
       <motion.div

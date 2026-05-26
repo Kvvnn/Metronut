@@ -8,10 +8,6 @@ import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 
 const SEOUL_API_BASE = "http://swopenAPI.seoul.go.kr/api/subway";
-const CONGESTION_API_BASE = "https://api.odcloud.kr/api"; // placeholder if needed
-// 서울교통공사 실시간 열차 혼잡도(차내) API - 같은 SEOUL_METRO_API_KEY 사용
-// path: CongestionCarRT/{lineId}/{trainNo}  (실데이터 신청 승인 필요)
-// 우리는 노선+역 단위 폴백 시뮬레이션을 기본으로 두고, 키로 시도해 실패하면 폴백.
 
 // 지하철 ID → 노선 ID 매핑
 function mapSubwayId(subwayId: string): string {
@@ -63,6 +59,13 @@ function generateSimulatedArrivals(stationName: string) {
   });
 
   return arrivals.sort((a: any, b: any) => a.arrivalTime - b.arrivalTime);
+}
+
+function parseApiError(data: any, fallbackMessage: string) {
+  return {
+    errorCode: String(data?.code ?? data?.status ?? "UNKNOWN"),
+    errorMessage: String(data?.message ?? data?.errorMessage?.message ?? fallbackMessage).trim(),
+  };
 }
 
 export const metroRouter = router({
@@ -128,47 +131,10 @@ export const metroRouter = router({
    * API 키 상태 확인 (키 값 자체는 노출하지 않음)
    */
   getApiStatus: publicProcedure.query(() => {
-    const hasKey = !!process.env.SEOUL_METRO_API_KEY;
-    return { hasApiKey: hasKey };
+    return {
+      hasApiKey: !!process.env.SEOUL_METRO_API_KEY,
+    };
   }),
-
-  /**
-   * 칸별 혼잡도 정보 조회
-   * 서울교통공사 실시간 혼잡도 API는 별도 데이터셋 활용 신청이 필요할 수 있음.
-   * 호출 실패 시 시뮬레이션 데이터로 폴백.
-   */
-  getCongestion: publicProcedure
-    .input(z.object({ stationName: z.string(), lineId: z.string().optional() }))
-    .query(async ({ input }) => {
-      const apiKey = process.env.SEOUL_METRO_API_KEY;
-      if (!apiKey) {
-        return { cars: generateSimulatedCongestion(), isSimulated: true };
-      }
-
-      try {
-        // 서울교통공사 실시간 열차 혼잡도 (시도) - 데이터셋명: CongestionTrainRT
-        const url = `${SEOUL_API_BASE}/${apiKey}/json/CongestionTrainRT/0/10/${encodeURIComponent(input.stationName)}`;
-        const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
-        if (!response.ok) {
-          return { cars: generateSimulatedCongestion(), isSimulated: true };
-        }
-        const data = await response.json();
-        const list = data.CongestionTrainRT?.row || data.row;
-        if (!Array.isArray(list) || list.length === 0) {
-          return { cars: generateSimulatedCongestion(), isSimulated: true };
-        }
-        // 응답 스키마가 명확치 않아 첫 열차의 칸별 데이터를 best-effort로 추출
-        const first = list[0];
-        const cars = Array.from({ length: 10 }, (_, i) => {
-          const raw = first[`congestion${i + 1}`] ?? first[`car${i + 1}`];
-          const percentage = typeof raw === "number" ? raw : Math.floor(Math.random() * 80) + 20;
-          return { carNumber: i + 1, percentage, level: percentToLevel(percentage) };
-        });
-        return { cars, isSimulated: false };
-      } catch {
-        return { cars: generateSimulatedCongestion(), isSimulated: true };
-      }
-    }),
 
   /**
    * 실시간 열차 위치 조회
@@ -180,16 +146,34 @@ export const metroRouter = router({
     .query(async ({ input }) => {
       const apiKey = process.env.SEOUL_METRO_API_KEY;
       if (!apiKey) {
-        return { positions: [], isSimulated: true };
+        return {
+          positions: [],
+          isSimulated: true,
+          errorCode: "NO_API_KEY",
+          errorMessage: "서울시 지하철 API 키가 설정되어 있지 않습니다.",
+        };
       }
 
       try {
         const url = `${SEOUL_API_BASE}/${apiKey}/json/realtimePosition/0/100/${encodeURIComponent(input.lineName)}`;
         const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
-        if (!response.ok) return { positions: [], isSimulated: true };
+        if (!response.ok) {
+          return {
+            positions: [],
+            isSimulated: true,
+            errorCode: String(response.status),
+            errorMessage: "서울시 열차 위치 API 요청에 실패했습니다.",
+          };
+        }
         const data = await response.json();
         const list = data.realtimePositionList;
-        if (!Array.isArray(list)) return { positions: [], isSimulated: true };
+        if (!Array.isArray(list)) {
+          return {
+            positions: [],
+            isSimulated: true,
+            ...parseApiError(data, "서울시 열차 위치 데이터를 사용할 수 없습니다."),
+          };
+        }
 
         const positions = list.map((item: any) => ({
           trainNo: String(item.trainNo ?? ""),
@@ -201,21 +185,12 @@ export const metroRouter = router({
         }));
         return { positions, isSimulated: false };
       } catch {
-        return { positions: [], isSimulated: true };
+        return {
+          positions: [],
+          isSimulated: true,
+          errorCode: "REQUEST_FAILED",
+          errorMessage: "서울시 열차 위치 API 연결에 실패했습니다.",
+        };
       }
     }),
 });
-
-function percentToLevel(p: number): "여유" | "보통" | "혼잡" | "매우혼잡" {
-  if (p < 40) return "여유";
-  if (p < 60) return "보통";
-  if (p < 80) return "혼잡";
-  return "매우혼잡";
-}
-
-function generateSimulatedCongestion() {
-  return Array.from({ length: 10 }, (_, i) => {
-    const percentage = Math.floor(Math.random() * 80) + 20;
-    return { carNumber: i + 1, percentage, level: percentToLevel(percentage) };
-  });
-}

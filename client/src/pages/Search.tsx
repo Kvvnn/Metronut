@@ -12,46 +12,63 @@ import { motion, AnimatePresence } from "framer-motion";
 import { searchStations, getAllLines } from "@/lib/pathfinder";
 import type { Line } from "@/lib/pathfinder";
 
+type ActiveField = "from" | "via" | "to";
+
 export default function Search() {
   const [, setLocation] = useLocation();
   const searchParams = new URLSearchParams(useSearch());
-  const type = searchParams.get("type") || "from"; // from or to
+  const type = searchParams.get("type") || "from";
+  const initialField: ActiveField =
+    type === "via" ? "via" : type === "to" ? "to" : "from";
   
   const [fromQuery, setFromQuery] = useState(searchParams.get("from") || "");
+  const [viaQuery, setViaQuery] = useState(searchParams.get("via") || "");
   const [toQuery, setToQuery] = useState(searchParams.get("to") || "");
-  const [activeField, setActiveField] = useState<"from" | "to">(type as "from" | "to");
+  const [activeField, setActiveField] = useState<ActiveField>(initialField);
   const [results, setResults] = useState<{ name: string; lines: Line[] }[]>([]);
   
   const fromRef = useRef<HTMLInputElement>(null);
+  const viaRef = useRef<HTMLInputElement>(null);
   const toRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (activeField === "from") {
       fromRef.current?.focus();
+    } else if (activeField === "via") {
+      viaRef.current?.focus();
     } else {
       toRef.current?.focus();
     }
   }, [activeField]);
 
   useEffect(() => {
-    const query = activeField === "from" ? fromQuery : toQuery;
+    const query = getActiveQuery();
     if (query.trim()) {
       const found = searchStations(query);
       setResults(found);
     } else {
       setResults([]);
     }
-  }, [fromQuery, toQuery, activeField]);
+  }, [fromQuery, viaQuery, toQuery, activeField]);
+
+  const getActiveQuery = () => {
+    if (activeField === "from") return fromQuery;
+    if (activeField === "via") return viaQuery;
+    return toQuery;
+  };
 
   const handleSelect = (name: string) => {
-    if (activeField === "from") {
+    if (activeField === "via") {
+      setViaQuery(name);
+      setLocation(buildHomePath(name));
+    } else if (activeField === "from") {
       setFromQuery(name);
       if (!toQuery) {
         setActiveField("to");
         setTimeout(() => toRef.current?.focus(), 100);
       } else {
         // 둘 다 있으면 경로 검색
-        setLocation(`/route-result?from=${encodeURIComponent(name)}&to=${encodeURIComponent(toQuery)}`);
+        setLocation(buildRouteResultPath(name, toQuery));
       }
     } else {
       setToQuery(name);
@@ -59,9 +76,24 @@ export default function Search() {
         setActiveField("from");
         setTimeout(() => fromRef.current?.focus(), 100);
       } else {
-        setLocation(`/route-result?from=${encodeURIComponent(fromQuery)}&to=${encodeURIComponent(name)}`);
+        setLocation(buildRouteResultPath(fromQuery, name));
       }
     }
+  };
+
+  const buildRouteResultPath = (from: string, to: string) => {
+    const params = new URLSearchParams({ from, to });
+    if (viaQuery) params.set("via", viaQuery);
+    return `/route-result?${params.toString()}`;
+  };
+
+  const buildHomePath = (via: string) => {
+    const params = new URLSearchParams();
+    if (fromQuery) params.set("from", fromQuery);
+    if (toQuery) params.set("to", toQuery);
+    if (via) params.set("via", via);
+    const query = params.toString();
+    return query ? `/?${query}` : "/";
   };
 
   const handleSwap = () => {
@@ -75,7 +107,7 @@ export default function Search() {
       {/* Header */}
       <div className="safe-top nav-bar sticky top-0 z-40">
         <div className="flex items-center px-4 py-3 gap-3">
-          <button onClick={() => setLocation("/")} className="btn-press p-1">
+          <button onClick={() => setLocation(buildHomePath(viaQuery))} className="btn-press p-1">
             <ArrowLeft size={22} className="text-[#1B2838]" />
           </button>
           
@@ -98,6 +130,25 @@ export default function Search() {
                 </button>
               )}
             </div>
+            {(activeField === "via" || viaQuery) && (
+              <div className={`flex items-center gap-2 bg-[#F5F5F7] rounded-lg px-3 py-2.5 transition-all ${activeField === "via" ? "ring-2 ring-[#27AE60]/30" : ""}`}>
+                <div className="w-2 h-2 rounded-full bg-[#27AE60] shrink-0" />
+                <input
+                  ref={viaRef}
+                  type="text"
+                  value={viaQuery}
+                  onChange={(e) => setViaQuery(e.target.value)}
+                  onFocus={() => setActiveField("via")}
+                  placeholder="경유역"
+                  className="flex-1 bg-transparent text-[14px] text-[#1B2838] placeholder:text-[#8E8E93] outline-none"
+                />
+                {viaQuery && (
+                  <button onClick={() => setViaQuery("")} className="p-0.5">
+                    <X size={14} className="text-[#8E8E93]" />
+                  </button>
+                )}
+              </div>
+            )}
             {/* To input */}
             <div className={`flex items-center gap-2 bg-[#F5F5F7] rounded-lg px-3 py-2.5 transition-all ${activeField === "to" ? "ring-2 ring-[#4A90D9]/30" : ""}`}>
               <div className="w-2 h-2 rounded-full bg-[#E74C3C] shrink-0" />
@@ -173,7 +224,7 @@ export default function Search() {
               className="pt-8 text-center"
             >
               <p className="text-[14px] text-[#8E8E93]">
-                {(activeField === "from" ? fromQuery : toQuery)
+                {getActiveQuery()
                   ? "검색 결과가 없습니다"
                   : "역 이름을 입력하세요"}
               </p>

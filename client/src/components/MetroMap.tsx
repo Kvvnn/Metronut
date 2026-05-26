@@ -4,11 +4,13 @@
  * - 클릭 영역은 같은 PNG 픽셀 좌표계의 역 마커 위에 투명하게 얹는다.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent, TouchEvent, WheelEvent } from "react";
-import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
+import type { MouseEvent, PointerEvent, TouchEvent, WheelEvent } from "react";
+import { CircleDot, Flag, MapPin, Maximize2, Plus, Train, ZoomIn, ZoomOut } from "lucide-react";
 import { useLocation } from "wouter";
 import metroData from "@/data/metroData.json";
 import officialMapCoords from "@/data/officialMapCoords.json";
+import { getRealtimeArrivals } from "@/lib/realtimeApi";
+import type { ArrivalInfo } from "@/lib/realtimeApi";
 import type { Station } from "@/lib/pathfinder";
 
 interface OfficialMapCoords {
@@ -36,13 +38,51 @@ interface ViewBox {
   h: number;
 }
 
+export type StationRole = "from" | "to" | "via";
+
 const officialMap = officialMapCoords as OfficialMapCoords;
 const MAP_WIDTH = officialMap.metadata.width;
 const MAP_HEIGHT = officialMap.metadata.height;
 const MAP_IMAGE = officialMap.metadata.image;
 const MAP_BOUNDS: ViewBox = { x: 0, y: 0, w: MAP_WIDTH, h: MAP_HEIGHT };
-const INITIAL_VIEW_BOX: ViewBox = { ...MAP_BOUNDS };
+// 처음에는 3배 확대된 상태로 시작 (역명이 잘 보이게)
+const INITIAL_VIEW_BOX: ViewBox = {
+  x: MAP_WIDTH / 2 - MAP_WIDTH / 6,
+  y: MAP_HEIGHT / 2 - MAP_HEIGHT / 6,
+  w: MAP_WIDTH / 3,
+  h: MAP_HEIGHT / 3,
+};
+// "전체 보기" 버튼이 가는 자리 (실제 전체 노선도)
+const FULL_VIEW_BOX: ViewBox = { ...MAP_BOUNDS };
 const MIN_VIEWBOX_SIZE = 320;
+// 줌 배율: 작을수록 한 번에 많이 확대됨
+const ZOOM_IN_FACTOR = 0.55;
+const ZOOM_OUT_FACTOR = 1.8;
+const WHEEL_ZOOM_IN_FACTOR = 0.7;
+const WHEEL_ZOOM_OUT_FACTOR = 1.4;
+const STATION_ROLE_OPTIONS = [
+  { role: "from" as const, label: "출발지로", Icon: CircleDot, color: "#4A90D9" },
+  { role: "via" as const, label: "경유지로", Icon: Plus, color: "#27AE60" },
+  { role: "to" as const, label: "도착지로", Icon: Flag, color: "#E74C3C" },
+];
+
+const ROLE_COLOR_MAP: Record<StationRole, string> = {
+  from: "#4A90D9",
+  via: "#27AE60",
+  to: "#E74C3C",
+};
+
+const ROLE_LABEL_MAP: Record<StationRole, string> = {
+  from: "출발",
+  via: "경유",
+  to: "도착",
+};
+
+export interface MapSelections {
+  from?: string;
+  via?: string;
+  to?: string;
+}
 
 function clampViewBox(box: ViewBox): ViewBox {
   const w = Math.max(MIN_VIEWBOX_SIZE, Math.min(MAP_BOUNDS.w, box.w));
@@ -77,12 +117,16 @@ function getRenderedViewport(rect: DOMRect, viewBox: ViewBox) {
 
 export default function MetroMap({
   onStationSelect,
+  onStationRoleSelect,
   selectedLines,
   highlightedStation,
+  selections,
 }: {
   onStationSelect?: (name: string) => void;
+  onStationRoleSelect?: (name: string, role: StationRole) => void;
   selectedLines?: string[];
   highlightedStation?: string;
+  selections?: MapSelections;
 }) {
   const [, setLocation] = useLocation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -92,9 +136,24 @@ export default function MetroMap({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hoveredStation, setHoveredStation] = useState<string | null>(null);
   const [selectedStation, setSelectedStation] = useState<string | null>(null);
+  const [stationMenu, setStationMenu] = useState<MapStation | null>(null);
+  const [menuArrivals, setMenuArrivals] = useState<ArrivalInfo[]>([]);
+  const [menuArrivalsLoading, setMenuArrivalsLoading] = useState(false);
 
   const lastTouchDist = useRef<number | null>(null);
   const hasDragged = useRef(false);
+
+  // 현재 역의 selection 역할 조회
+  const getStationRole = useCallback(
+    (name: string): StationRole | null => {
+      if (!selections) return null;
+      if (selections.from === name) return "from";
+      if (selections.via === name) return "via";
+      if (selections.to === name) return "to";
+      return null;
+    },
+    [selections],
+  );
 
   const stations: MapStation[] = useMemo(() => {
     const coordsById = officialMap.stations;
@@ -150,6 +209,37 @@ export default function MetroMap({
     }));
   }, [highlightedStation, uniqueStations]);
 
+  // 메뉴 열릴 때 실시간 도착정보 조회 (방향별로 최대 2개씩)
+  useEffect(() => {
+    if (!stationMenu) {
+      setMenuArrivals([]);
+      return;
+    }
+    let cancelled = false;
+    setMenuArrivalsLoading(true);
+    getRealtimeArrivals(stationMenu.name)
+      .then(data => {
+        if (cancelled) return;
+        // 방향별로 그룹핑 후 각 방향 최대 2개
+        const byDir = new Map<string, ArrivalInfo[]>();
+        data.forEach(a => {
+          const key = a.direction || "—";
+          const list = byDir.get(key) ?? [];
+          if (list.length < 2) list.push(a);
+          byDir.set(key, list);
+        });
+        const flat: ArrivalInfo[] = [];
+        byDir.forEach(list => flat.push(...list));
+        setMenuArrivals(flat.slice(0, 4));
+      })
+      .finally(() => {
+        if (!cancelled) setMenuArrivalsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [stationMenu]);
+
   const screenToSvg = useCallback((clientX: number, clientY: number) => {
     if (!containerRef.current) return { x: 0, y: 0 };
     const rect = containerRef.current.getBoundingClientRect();
@@ -166,6 +256,41 @@ export default function MetroMap({
       y: viewBox.y + yRatio * viewBox.h,
     };
   }, [viewBox]);
+
+  const svgToContainerPoint = useCallback((point: { x: number; y: number }) => {
+    if (!containerRef.current) return null;
+    const rect = containerRef.current.getBoundingClientRect();
+    const rendered = getRenderedViewport(rect, viewBox);
+
+    return {
+      x: rendered.offsetX + ((point.x - viewBox.x) / viewBox.w) * rendered.renderedW,
+      y: rendered.offsetY + ((point.y - viewBox.y) / viewBox.h) * rendered.renderedH,
+      containerWidth: rect.width,
+      containerHeight: rect.height,
+    };
+  }, [viewBox]);
+
+  const stationMenuPosition = useMemo(() => {
+    if (!stationMenu) return null;
+    const point = svgToContainerPoint(stationMenu);
+    if (!point) return null;
+
+    const halfWidth = 120; // 14rem 카드의 반
+    const edgeGap = 10;
+    const minLeft = Math.min(halfWidth + edgeGap, point.containerWidth / 2);
+    const maxLeft = Math.max(minLeft, point.containerWidth - halfWidth - edgeGap);
+    const left = Math.min(Math.max(point.x, minLeft), maxLeft);
+    const placeAbove = point.y > 220;
+    const top = placeAbove
+      ? Math.max(edgeGap, point.y - 14)
+      : Math.min(point.containerHeight - edgeGap, point.y + 14);
+
+    return {
+      left,
+      top,
+      transform: placeAbove ? "translate(-50%, -100%)" : "translate(-50%, 0)",
+    };
+  }, [stationMenu, svgToContainerPoint]);
 
   const zoomAt = useCallback((factor: number, center?: { x: number; y: number }) => {
     setViewBox(prev => {
@@ -210,6 +335,7 @@ export default function MetroMap({
     if (event.pointerType === "touch") return;
     hasDragged.current = false;
     setIsDragging(true);
+    setStationMenu(null);
     setDragStart({ x: event.clientX, y: event.clientY });
     event.currentTarget.setPointerCapture(event.pointerId);
   }, []);
@@ -223,6 +349,7 @@ export default function MetroMap({
     }
     if (Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y) > 2) {
       hasDragged.current = true;
+      setStationMenu(null);
     }
     panByScreenDelta(event.clientX - dragStart.x, event.clientY - dragStart.y);
     setDragStart({ x: event.clientX, y: event.clientY });
@@ -234,10 +361,13 @@ export default function MetroMap({
 
   const handleWheel = useCallback((event: WheelEvent<SVGSVGElement>) => {
     event.preventDefault();
-    zoomAt(event.deltaY > 0 ? 1.14 : 0.88, screenToSvg(event.clientX, event.clientY));
+    setStationMenu(null);
+    zoomAt(event.deltaY > 0 ? WHEEL_ZOOM_OUT_FACTOR : WHEEL_ZOOM_IN_FACTOR, screenToSvg(event.clientX, event.clientY));
   }, [screenToSvg, zoomAt]);
 
   const handleTouchStart = useCallback((event: TouchEvent<SVGSVGElement>) => {
+    hasDragged.current = false;
+    setStationMenu(null);
     if (event.touches.length === 2) {
       const dx = event.touches[0].clientX - event.touches[1].clientX;
       const dy = event.touches[0].clientY - event.touches[1].clientY;
@@ -249,9 +379,9 @@ export default function MetroMap({
   }, []);
 
   const handleTouchMove = useCallback((event: TouchEvent<SVGSVGElement>) => {
-    event.preventDefault();
-
     if (event.touches.length === 2 && lastTouchDist.current !== null) {
+      hasDragged.current = true;
+      setStationMenu(null);
       const dx = event.touches[0].clientX - event.touches[1].clientX;
       const dy = event.touches[0].clientY - event.touches[1].clientY;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -263,6 +393,10 @@ export default function MetroMap({
       zoomAt(lastTouchDist.current / dist, screenToSvg(center.x, center.y));
       lastTouchDist.current = dist;
     } else if (event.touches.length === 1 && isDragging) {
+      if (Math.hypot(event.touches[0].clientX - dragStart.x, event.touches[0].clientY - dragStart.y) > 2) {
+        hasDragged.current = true;
+        setStationMenu(null);
+      }
       panByScreenDelta(
         event.touches[0].clientX - dragStart.x,
         event.touches[0].clientY - dragStart.y,
@@ -276,23 +410,47 @@ export default function MetroMap({
     lastTouchDist.current = null;
   }, []);
 
-  const handleStationClick = useCallback((name: string) => {
+  const openStationMenu = useCallback((station: MapStation) => {
+    setSelectedStation(station.name);
+    setHoveredStation(null);
+    setStationMenu(station);
+  }, []);
+
+  const handleStationRoleSelect = useCallback((role: StationRole) => {
+    if (!stationMenu) return;
+    const name = stationMenu.name;
     setSelectedStation(name);
+    setStationMenu(null);
+
+    if (onStationRoleSelect) {
+      onStationRoleSelect(name, role);
+      return;
+    }
+
     if (onStationSelect) {
       onStationSelect(name);
       return;
     }
 
-    setLocation(`/station/${encodeURIComponent(name)}`);
-  }, [onStationSelect, setLocation]);
+    const encodedName = encodeURIComponent(name);
+    if (role === "from") {
+      setLocation(`/search?type=to&from=${encodedName}`);
+    } else if (role === "to") {
+      setLocation(`/search?type=from&to=${encodedName}`);
+    } else {
+      setLocation(`/?via=${encodedName}`);
+    }
+  }, [onStationRoleSelect, onStationSelect, setLocation, stationMenu]);
 
-  const handleMapClick = useCallback((event: PointerEvent<SVGSVGElement>) => {
+  const handleMapClick = useCallback((event: MouseEvent<SVGSVGElement>) => {
     if (hasDragged.current) return;
     const station = findNearestStation(screenToSvg(event.clientX, event.clientY));
     if (station) {
-      handleStationClick(station.name);
+      openStationMenu(station);
+    } else {
+      setStationMenu(null);
     }
-  }, [findNearestStation, handleStationClick, screenToSvg]);
+  }, [findNearestStation, openStationMenu, screenToSvg]);
 
   const hitRadius = Math.max(10, Math.min(30, viewBox.w * 0.012));
   const ringRadius = Math.max(12, hitRadius * 1.25);
@@ -337,11 +495,30 @@ export default function MetroMap({
         <g>
           {uniqueStations.map(station => {
             const isHovered = hoveredStation === station.name;
-            const isSelected = selectedStation === station.name || highlightedStation === station.name;
+            const role = getStationRole(station.name);
+            const isRoleSelected = role !== null;
+            const isFocused = selectedStation === station.name || highlightedStation === station.name;
+            const roleColor = role ? ROLE_COLOR_MAP[role] : null;
 
             return (
               <g key={station.id}>
-                {isSelected && (
+                {/* Role ring (from/via/to) — 항상 표시 */}
+                {isRoleSelected && roleColor && (
+                  <>
+                    <circle
+                      cx={station.x}
+                      cy={station.y}
+                      r={ringRadius + 9}
+                      fill={`${roleColor}33`}
+                      stroke={roleColor}
+                      strokeWidth={Math.max(2.5, viewBox.w * 0.003)}
+                      filter="url(#official-station-glow)"
+                      className="pointer-events-none"
+                    />
+                  </>
+                )}
+                {/* Focus ring (메뉴 열린 역) — role 없을 때만 별도 표시 */}
+                {isFocused && !isRoleSelected && (
                   <circle
                     cx={station.x}
                     cy={station.y}
@@ -353,7 +530,7 @@ export default function MetroMap({
                     className="pointer-events-none"
                   />
                 )}
-                {isHovered && !isSelected && (
+                {isHovered && !isFocused && !isRoleSelected && (
                   <circle
                     cx={station.x}
                     cy={station.y}
@@ -381,16 +558,103 @@ export default function MetroMap({
         </g>
       </svg>
 
+      {stationMenu && stationMenuPosition && (
+        <div
+          className="absolute z-30 w-60 rounded-2xl border border-[#E5E5EA] bg-white/95 p-2 shadow-[0_14px_40px_rgba(27,40,56,0.22)] backdrop-blur-md"
+          style={stationMenuPosition}
+          role="menu"
+          aria-label={`${stationMenu.name}역 선택 메뉴`}
+        >
+          {/* Header */}
+          <div className="flex items-center gap-2 px-1.5 py-1.5">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F5F5F7] text-[#1B2838]">
+              <MapPin size={15} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[14px] font-semibold text-[#1B2838]">
+                {stationMenu.name}
+              </p>
+              {getStationRole(stationMenu.name) && (
+                <p
+                  className="text-[10px] font-bold"
+                  style={{ color: ROLE_COLOR_MAP[getStationRole(stationMenu.name)!] }}
+                >
+                  현재: {ROLE_LABEL_MAP[getStationRole(stationMenu.name)!]}지
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Arrivals */}
+          <div className="mt-1 rounded-xl bg-[#F8F9FB] px-2 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[#8E8E93] mb-1.5 px-0.5">
+              실시간 도착
+            </p>
+            {menuArrivalsLoading ? (
+              <p className="text-[11px] text-[#8E8E93] px-0.5 py-1">불러오는 중...</p>
+            ) : menuArrivals.length === 0 ? (
+              <p className="text-[11px] text-[#8E8E93] px-0.5 py-1">도착 정보 없음</p>
+            ) : (
+              <ul className="space-y-1">
+                {menuArrivals.map((a, i) => (
+                  <li key={i} className="flex items-center gap-1.5 text-[11.5px]">
+                    <Train size={11} className="shrink-0 text-[#4A90D9]" />
+                    <span className="truncate font-medium text-[#1B2838] flex-1">
+                      {a.direction || a.destination}
+                    </span>
+                    <span className="shrink-0 font-semibold text-[#1B2838]">
+                      {a.arrivalMessage || "—"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Role buttons */}
+          <div className="mt-1.5 space-y-0.5">
+            {STATION_ROLE_OPTIONS.map(({ role, label, Icon, color }) => {
+              const isCurrentRole = getStationRole(stationMenu.name) === role;
+              return (
+                <button
+                  key={role}
+                  type="button"
+                  onClick={() => handleStationRoleSelect(role)}
+                  className={`btn-press flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-[13px] font-semibold focus:outline-none ${
+                    isCurrentRole
+                      ? "bg-[#F5F5F7] text-[#1B2838]"
+                      : "text-[#1B2838] hover:bg-[#F5F5F7] focus:bg-[#F5F5F7]"
+                  }`}
+                  role="menuitem"
+                  aria-pressed={isCurrentRole}
+                >
+                  <span
+                    className="flex h-6 w-6 items-center justify-center rounded-full text-white"
+                    style={{ backgroundColor: color }}
+                  >
+                    <Icon size={13} />
+                  </span>
+                  <span className="flex-1">{label}</span>
+                  {isCurrentRole && (
+                    <span className="text-[9px] font-bold text-[#8E8E93]">선택됨</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="absolute bottom-4 right-4 flex flex-col gap-2">
         <button
-          onClick={() => zoomAt(0.78)}
+          onClick={() => zoomAt(ZOOM_IN_FACTOR)}
           className="w-9 h-9 bg-white/95 backdrop-blur-sm rounded-xl shadow-md flex items-center justify-center text-[#1B2838] btn-press"
           aria-label="확대"
         >
           <ZoomIn size={18} />
         </button>
         <button
-          onClick={() => zoomAt(1.25)}
+          onClick={() => zoomAt(ZOOM_OUT_FACTOR)}
           className="w-9 h-9 bg-white/95 backdrop-blur-sm rounded-xl shadow-md flex items-center justify-center text-[#1B2838] btn-press"
           aria-label="축소"
         >
@@ -399,7 +663,8 @@ export default function MetroMap({
         <button
           onClick={() => {
             setSelectedStation(null);
-            setViewBox(INITIAL_VIEW_BOX);
+            setStationMenu(null);
+            setViewBox(FULL_VIEW_BOX);
           }}
           className="w-9 h-9 bg-white/95 backdrop-blur-sm rounded-xl shadow-md flex items-center justify-center text-[#1B2838] btn-press"
           aria-label="전체 보기"

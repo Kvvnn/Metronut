@@ -10,7 +10,7 @@ import { useState, useEffect } from "react";
 import { useLocation, useSearch, useParams } from "wouter";
 import { ArrowLeft, Play, Clock, Train, Footprints, ChevronDown, ChevronUp } from "lucide-react";
 import { motion } from "framer-motion";
-import { findRoutes, calculateArrivalTime, getLineInfo } from "@/lib/pathfinder";
+import { findRoutes, findRoutesVia, calculateArrivalTime, getLineInfo } from "@/lib/pathfinder";
 import type { Route, RouteSegment } from "@/lib/pathfinder";
 import { toast } from "sonner";
 
@@ -19,6 +19,7 @@ export default function RouteDetail() {
   const params = useParams<{ id: string }>();
   const searchParams = new URLSearchParams(useSearch());
   const from = searchParams.get("from") || "";
+  const via = searchParams.get("via") || "";
   const to = searchParams.get("to") || "";
   const routeIdx = parseInt(params.id || "0");
   
@@ -27,12 +28,12 @@ export default function RouteDetail() {
 
   useEffect(() => {
     if (from && to) {
-      const routes = findRoutes(from, to);
+      const routes = via ? findRoutesVia(from, via, to) : findRoutes(from, to);
       if (routes[routeIdx]) {
         setRoute(routes[routeIdx]);
       }
     }
-  }, [from, to, routeIdx]);
+  }, [from, via, to, routeIdx]);
 
   const toggleSegment = (idx: number) => {
     const next = new Set(expandedSegments);
@@ -52,7 +53,7 @@ export default function RouteDetail() {
   const arrivalTime = calculateArrivalTime(route.totalTime);
 
   return (
-    <div className="min-h-screen bg-background pb-24">
+    <div className="min-h-screen bg-background pb-[calc(148px+env(safe-area-inset-bottom,0px))]">
       {/* Header */}
       <div className="safe-top nav-bar sticky top-0 z-40">
         <div className="flex items-center px-4 py-3 gap-3">
@@ -116,34 +117,66 @@ export default function RouteDetail() {
       </div>
 
       {/* Start Riding Button */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] p-4 bg-gradient-to-t from-background via-background to-transparent">
-        <button
-          onClick={() => {
-            const firstRideIdx = route.segments.findIndex(s => !s.isTransfer);
-            const firstRide = route.segments[firstRideIdx];
-            if (firstRide) {
-              const hasMoreRides = route.segments
-                .slice(firstRideIdx + 1)
-                .some(s => !s.isTransfer);
-              const ridingPayload = {
-                lineId: firstRide.lineId,
-                lineName: getLineInfo(firstRide.lineId)?.name || firstRide.lineName,
-                direction: `${firstRide.toStation.name} 방면`,
-                fromStationName: firstRide.fromStation.name,
-                toStationName: firstRide.toStation.name,
-                stationNames: firstRide.stations.map(s => s.name),
-                isTransferAtEnd: hasMoreRides,
-              };
-              sessionStorage.setItem("riding_data", JSON.stringify(ridingPayload));
-            }
-            toast("탑승 안내를 시작합니다");
-            setLocation("/riding");
-          }}
-          className="w-full bg-[#1B2838] text-white rounded-2xl py-4 text-[16px] font-semibold btn-press flex items-center justify-center gap-2 shadow-lg"
-        >
-          <Play size={18} fill="white" />
-          탑승 안내 시작
-        </button>
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50">
+        <div className="mx-auto w-full max-w-[480px]">
+          <div className="h-8 bg-gradient-to-t from-background to-transparent" />
+          <div className="bg-background px-4 pb-[calc(16px+env(safe-area-inset-bottom,0px))] pt-2">
+            <button
+              onClick={() => {
+                // 전체 여정(모든 segments)을 직렬화해서 저장. ride/transfer 모두 포함.
+                const serialized = route.segments.map((seg, i) => {
+                  if (seg.isTransfer) {
+                    const prevRide = route.segments
+                      .slice(0, i)
+                      .reverse()
+                      .find(s => !s.isTransfer);
+                    const nextRide = route.segments
+                      .slice(i + 1)
+                      .find(s => !s.isTransfer);
+                    const toLine = getLineInfo(seg.lineId);
+                    // RouteDetail에서 보여주던 결정적 해시와 동일하게 빠른환승 계산
+                    const hash =
+                      (seg.fromStation?.name || "x").charCodeAt(0) +
+                      (seg.toStation?.name || "y").charCodeAt(0);
+                    return {
+                      type: "transfer" as const,
+                      stationName: seg.fromStation.name,
+                      fromLineId: prevRide?.lineId || "",
+                      toLineId: seg.lineId,
+                      toLineName: toLine?.name || seg.lineName,
+                      toDirection: nextRide ? `${nextRide.toStation.name} 방면` : "",
+                      walkMinutes: seg.time,
+                      fastCar: (hash % 8) + 1,
+                      fastDoor: (hash % 4) + 1,
+                    };
+                  }
+                  return {
+                    type: "ride" as const,
+                    lineId: seg.lineId,
+                    lineName: getLineInfo(seg.lineId)?.name || seg.lineName,
+                    direction: `${seg.toStation.name} 방면`,
+                    fromStationName: seg.fromStation.name,
+                    toStationName: seg.toStation.name,
+                    stationNames: seg.stations.map(s => s.name),
+                  };
+                });
+                const payload = {
+                  segments: serialized,
+                  overallFromStation: route.segments[0]?.fromStation.name || "",
+                  overallToStation:
+                    route.segments[route.segments.length - 1]?.toStation.name || "",
+                };
+                sessionStorage.setItem("riding_route", JSON.stringify(payload));
+                toast("탑승 안내를 시작합니다");
+                setLocation("/riding");
+              }}
+              className="pointer-events-auto flex w-full items-center justify-center gap-2 rounded-2xl bg-[#1B2838] py-4 text-[16px] font-semibold text-white shadow-lg btn-press"
+            >
+              <Play size={18} fill="white" />
+              탑승 안내 시작
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -165,40 +198,48 @@ function RideSegment({
   const line = getLineInfo(segment.lineId);
   const stationCount = segment.stations.length - 1;
   const middleStations = segment.stations.slice(1, -1);
+  const segmentColor = line?.color || segment.lineColor;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="relative"
+      className="relative pb-1"
     >
-      {/* Line bar */}
       <div
-        className="absolute left-[19px] top-6 bottom-0 w-[3px] rounded-full"
-        style={{ backgroundColor: line?.color || segment.lineColor }}
+        className="absolute left-[21px] top-6 w-[3px] rounded-full"
+        style={{
+          backgroundColor: segmentColor,
+          bottom: isLast ? "66px" : "16px",
+        }}
       />
 
       {/* Start station */}
-      <div className="flex items-start gap-3 relative">
-        <div
-          className="w-[10px] h-[10px] rounded-full border-[3px] mt-1.5 shrink-0 z-10 bg-white"
-          style={{ borderColor: line?.color || segment.lineColor }}
-        />
-        <div className="flex-1 pb-2">
-          <div className="flex items-center gap-2">
-            <span className="text-[15px] font-semibold text-[#1B2838]">
+      <div
+        className="relative grid items-start gap-4"
+        style={{ gridTemplateColumns: "44px minmax(0, 1fr)" }}
+      >
+        <div className="relative z-10 flex h-10 items-center justify-center">
+          <div
+            className="h-4 w-4 rounded-full border-[3px] bg-white"
+            style={{ borderColor: segmentColor }}
+          />
+        </div>
+        <div className="min-w-0 pb-6">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-[22px] font-bold leading-8 text-[#1B2838]">
               {segment.fromStation.name}
             </span>
             <span
-              className="line-badge text-[10px]"
-              style={{ backgroundColor: line?.color || segment.lineColor }}
+              className="line-badge shrink-0 text-[10px]"
+              style={{ backgroundColor: segmentColor }}
             >
               {line?.shortName || segment.lineId}
             </span>
           </div>
           {isFirst && (
-            <p className="text-[12px] text-[#8E8E93] mt-0.5">승차</p>
+            <p className="mt-1.5 text-[13px] leading-5 text-[#8E8E93]">승차</p>
           )}
         </div>
       </div>
@@ -207,19 +248,22 @@ function RideSegment({
       {stationCount > 1 && (
         <button
           onClick={onToggle}
-          className="flex items-center gap-3 ml-[7px] py-2 btn-press"
+          className="btn-press grid w-full items-center gap-4 py-2 text-left"
+          style={{ gridTemplateColumns: "44px minmax(0, 1fr)" }}
         >
-          <div className="w-[26px] flex justify-center">
-            <Train size={12} style={{ color: line?.color || segment.lineColor }} />
+          <div className="relative z-10 flex h-7 items-center justify-center bg-background">
+            <Train size={14} style={{ color: segmentColor }} />
           </div>
-          <span className="text-[13px] text-[#8E8E93]">
-            {stationCount}개 역 이동 ({segment.time}분)
-          </span>
-          {expanded ? (
-            <ChevronUp size={14} className="text-[#8E8E93]" />
-          ) : (
-            <ChevronDown size={14} className="text-[#8E8E93]" />
-          )}
+          <div className="flex min-w-0 items-center gap-2 rounded-xl bg-[#F8F8FA] px-3 py-2">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#8E8E93]">
+              {stationCount}개 역 이동 ({segment.time}분)
+            </span>
+            {expanded ? (
+              <ChevronUp size={14} className="shrink-0 text-[#8E8E93]" />
+            ) : (
+              <ChevronDown size={14} className="shrink-0 text-[#8E8E93]" />
+            )}
+          </div>
         </button>
       )}
 
@@ -229,29 +273,44 @@ function RideSegment({
           animate={{ height: "auto", opacity: 1 }}
           exit={{ height: 0, opacity: 0 }}
           transition={{ duration: 0.3 }}
-          className="ml-[19px] pl-4 border-l-0"
+          className="py-1"
         >
           {middleStations.map((station, i) => (
-            <div key={i} className="flex items-center gap-2 py-1.5">
-              <div className="w-[6px] h-[6px] rounded-full bg-[#E0E0E0]" />
-              <span className="text-[13px] text-[#8E8E93]">{station.name}</span>
+            <div
+              key={i}
+              className="grid items-center gap-4 py-1.5"
+              style={{ gridTemplateColumns: "44px minmax(0, 1fr)" }}
+            >
+              <div className="relative z-10 flex h-5 items-center justify-center">
+                <div className="h-1.5 w-1.5 rounded-full bg-[#DADAE0]" />
+              </div>
+              <span className="truncate text-[16px] font-medium leading-6 text-[#8E8E93]">
+                {station.name}
+              </span>
             </div>
           ))}
         </motion.div>
       )}
 
       {/* End station */}
-      <div className="flex items-start gap-3 relative pb-2">
-        <div
-          className="w-[10px] h-[10px] rounded-full border-[3px] mt-1.5 shrink-0 z-10 bg-white"
-          style={{ borderColor: line?.color || segment.lineColor }}
-        />
-        <div className="flex-1">
-          <span className="text-[15px] font-semibold text-[#1B2838]">
-            {segment.toStation.name}
-          </span>
+      <div
+        className="relative grid items-start gap-4"
+        style={{ gridTemplateColumns: "44px minmax(0, 1fr)" }}
+      >
+        <div className="relative z-10 flex h-10 items-center justify-center">
+          <div
+            className="h-4 w-4 rounded-full border-[3px] bg-white"
+            style={{ borderColor: segmentColor }}
+          />
+        </div>
+        <div className="min-w-0 pb-6">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-[22px] font-bold leading-8 text-[#1B2838]">
+              {segment.toStation.name}
+            </span>
+          </div>
           {isLast && (
-            <p className="text-[12px] text-[#8E8E93] mt-0.5">하차</p>
+            <p className="mt-1.5 text-[13px] leading-5 text-[#8E8E93]">하차</p>
           )}
         </div>
       </div>
@@ -267,21 +326,24 @@ function TransferSegment({ segment }: { segment: RouteSegment }) {
   const fastDoor = (hash % 4) + 1;
 
   return (
-    <div className="flex items-center gap-3 py-3 ml-[7px]">
-      <div className="w-[26px] flex justify-center">
-        <Footprints size={14} className="text-[#E67E22]" />
+    <div
+      className="grid items-start gap-4 py-4"
+      style={{ gridTemplateColumns: "44px minmax(0, 1fr)" }}
+    >
+      <div className="flex h-8 items-center justify-center">
+        <Footprints size={15} className="text-[#E67E22]" />
       </div>
-      <div className="flex-1">
-        <div className="flex items-center gap-2">
+      <div className="min-w-0 rounded-2xl bg-[#FFF7EF] px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="text-[13px] font-medium text-[#E67E22]">환승</span>
           <span
-            className="line-badge text-[10px]"
+            className="line-badge shrink-0 text-[10px]"
             style={{ backgroundColor: toLine?.color || '#888' }}
           >
             {toLine?.shortName || segment.lineId}
           </span>
         </div>
-        <p className="text-[12px] text-[#8E8E93] mt-0.5">
+        <p className="mt-1 text-[12px] leading-5 text-[#8E8E93]">
           도보 약 {segment.time}분 · 빠른 환승 {fastCar}-{fastDoor}번 칸
         </p>
       </div>

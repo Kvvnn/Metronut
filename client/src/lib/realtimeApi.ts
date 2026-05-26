@@ -49,7 +49,7 @@ export async function getRealtimeArrivals(stationName: string): Promise<ArrivalI
 }
 
 /**
- * API 키 상태 확인 (서버에 키가 설정되어 있는지)
+ * API 키 상태 확인 (서버에 SEOUL_METRO_API_KEY가 설정되어 있는지)
  */
 export async function checkApiKeyStatus(): Promise<boolean> {
   try {
@@ -59,7 +59,7 @@ export async function checkApiKeyStatus(): Promise<boolean> {
     const response = await fetch(url, { credentials: "include" });
     if (!response.ok) return false;
     const data = await response.json();
-    return data[0]?.result?.data?.json?.hasApiKey ?? false;
+    return !!data[0]?.result?.data?.json?.hasApiKey;
   } catch {
     return false;
   }
@@ -98,34 +98,6 @@ function generateSimulatedArrivals(stationName: string): ArrivalInfo[] {
 }
 
 /**
- * 실시간 혼잡도 정보 (서버 프록시 경유)
- */
-export interface CongestionInfo {
-  carNumber: number;
-  level: "여유" | "보통" | "혼잡" | "매우혼잡";
-  percentage: number;
-}
-
-export async function getCongestion(
-  stationName: string,
-  lineId?: string,
-): Promise<{ cars: CongestionInfo[]; isSimulated: boolean }> {
-  try {
-    const url = `/api/trpc/metro.getCongestion?batch=1&input=${encodeURIComponent(
-      JSON.stringify({ "0": { json: { stationName, lineId } } }),
-    )}`;
-    const response = await fetch(url, { credentials: "include" });
-    if (!response.ok) return { cars: getSimulatedCongestion(), isSimulated: true };
-    const data = await response.json();
-    const result = data[0]?.result?.data?.json;
-    if (result?.cars) return { cars: result.cars, isSimulated: !!result.isSimulated };
-    return { cars: getSimulatedCongestion(), isSimulated: true };
-  } catch {
-    return { cars: getSimulatedCongestion(), isSimulated: true };
-  }
-}
-
-/**
  * 실시간 열차 위치 조회 (서버 프록시 경유)
  */
 export interface TrainPosition {
@@ -139,30 +111,39 @@ export interface TrainPosition {
 
 export async function getTrainPositions(
   lineName: string,
-): Promise<{ positions: TrainPosition[]; isSimulated: boolean }> {
+): Promise<{
+  positions: TrainPosition[];
+  isSimulated: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+}> {
   try {
     const url = `/api/trpc/metro.getTrainPositions?batch=1&input=${encodeURIComponent(
       JSON.stringify({ "0": { json: { lineName } } }),
     )}`;
     const response = await fetch(url, { credentials: "include" });
-    if (!response.ok) return { positions: [], isSimulated: true };
+    if (!response.ok) {
+      return {
+        positions: [],
+        isSimulated: true,
+        errorCode: String(response.status),
+        errorMessage: "열차 위치 요청에 실패했습니다.",
+      };
+    }
     const data = await response.json();
     const result = data[0]?.result?.data?.json;
-    return result ?? { positions: [], isSimulated: true };
+    return result ?? {
+      positions: [],
+      isSimulated: true,
+      errorCode: "EMPTY_RESPONSE",
+      errorMessage: "열차 위치 응답이 비어 있습니다.",
+    };
   } catch {
-    return { positions: [], isSimulated: true };
+    return {
+      positions: [],
+      isSimulated: true,
+      errorCode: "REQUEST_FAILED",
+      errorMessage: "열차 위치 요청에 실패했습니다.",
+    };
   }
-}
-
-export function getSimulatedCongestion(): CongestionInfo[] {
-  return Array.from({ length: 10 }, (_, i) => {
-    const percentage = Math.floor(Math.random() * 80) + 20;
-    let level: CongestionInfo["level"];
-    if (percentage < 40) level = "여유";
-    else if (percentage < 60) level = "보통";
-    else if (percentage < 80) level = "혼잡";
-    else level = "매우혼잡";
-
-    return { carNumber: i + 1, level, percentage };
-  });
 }
