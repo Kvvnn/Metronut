@@ -5,31 +5,108 @@
  * - 출구 정보
  * - 환승 정보
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams } from "wouter";
-import { ArrowLeft, Train, Clock, DoorOpen, ArrowUpDown, Star, RefreshCw } from "lucide-react";
-import { motion } from "framer-motion";
+import {
+  ArrowLeft,
+  Train,
+  Clock,
+  DoorOpen,
+  ArrowUpDown,
+  Star,
+  RefreshCw,
+  Home,
+  Briefcase,
+  GraduationCap,
+  Check,
+} from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { getStationInfo, getLineInfo } from "@/lib/pathfinder";
 import { getRealtimeArrivals, checkApiKeyStatus } from "@/lib/realtimeApi";
 import type { ArrivalInfo } from "@/lib/realtimeApi";
+import { getFirstLastTrain } from "@/lib/firstLastTrain";
+import type { DayType } from "@/lib/firstLastTrain";
 import { toast } from "sonner";
+import {
+  getStationFavoriteKindsForStation,
+  getStationFavoriteMap,
+  removeStationFavorite,
+  setStationFavorite,
+  STATION_FAVORITE_KINDS,
+  type StationFavoriteKind,
+} from "@/lib/stationFavorites";
+
+const stationFavoriteIconMap = {
+  home: Home,
+  work: Briefcase,
+  school: GraduationCap,
+} satisfies Record<StationFavoriteKind, typeof Home>;
+
+const stationFavoriteColorMap = {
+  home: "#4A90D9",
+  work: "#7C5CFF",
+  school: "#27AE60",
+} satisfies Record<StationFavoriteKind, string>;
 
 export default function StationInfo() {
   const { name } = useParams<{ name: string }>();
   const decodedName = decodeURIComponent(name || "");
-  const stations = getStationInfo(decodedName);
+  const stations = useMemo(() => getStationInfo(decodedName), [decodedName]);
   const [selectedLine, setSelectedLine] = useState(stations[0]?.lineId || "");
   const [arrivals, setArrivals] = useState<ArrivalInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isSimulated, setIsSimulated] = useState(true);
+  const [showFavoritePicker, setShowFavoritePicker] = useState(false);
+  const [stationFavoriteMap, setStationFavoriteMap] = useState(() => getStationFavoriteMap());
+  const [scheduleDayType, setScheduleDayType] = useState<DayType>(() => {
+    const day = new Date().getDay();
+    return day === 0 || day === 6 ? "weekend" : "weekday";
+  });
+
+  const firstLast = useMemo(
+    () => getFirstLastTrain(selectedLine, decodedName, scheduleDayType),
+    [selectedLine, decodedName, scheduleDayType],
+  );
 
   const line = getLineInfo(selectedLine);
+  const assignedFavoriteKinds = getStationFavoriteKindsForStation(decodedName);
+  const isFavoriteStation = assignedFavoriteKinds.length > 0;
+
+  const refreshStationFavorites = () => {
+    setStationFavoriteMap(getStationFavoriteMap());
+  };
 
   useEffect(() => {
     loadArrivals();
     checkApiKeyStatus().then(hasKey => setIsSimulated(!hasKey));
   }, [decodedName, selectedLine, stations]);
+
+  useEffect(() => {
+    refreshStationFavorites();
+    window.addEventListener("storage", refreshStationFavorites);
+    window.addEventListener("metro:station-favorites-changed", refreshStationFavorites);
+    return () => {
+      window.removeEventListener("storage", refreshStationFavorites);
+      window.removeEventListener("metro:station-favorites-changed", refreshStationFavorites);
+    };
+  }, []);
+
+  const handleToggleStationFavorite = (kind: StationFavoriteKind) => {
+    const favorite = stationFavoriteMap[kind];
+    const label = STATION_FAVORITE_KINDS.find(item => item.kind === kind)?.label ?? "즐겨찾기";
+
+    if (favorite?.stationName === decodedName) {
+      removeStationFavorite(kind);
+      refreshStationFavorites();
+      toast(`${label} 설정을 해제했습니다`);
+      return;
+    }
+
+    setStationFavorite(kind, decodedName, selectedLine);
+    refreshStationFavorites();
+    toast(`${decodedName}역을 ${label}으로 설정했습니다`);
+  };
 
   const loadArrivals = async () => {
     setLoading(true);
@@ -64,10 +141,16 @@ export default function StationInfo() {
             <span className="text-[15px] font-semibold text-[#1B2838]">{decodedName}역</span>
           </div>
           <button
-            onClick={() => toast("즐겨찾기에 추가되었습니다")}
-            className="btn-press p-1"
+            onClick={() => setShowFavoritePicker(value => !value)}
+            className="btn-press flex h-8 w-8 items-center justify-center rounded-full bg-[#F5F5F7]"
+            aria-label="역 즐겨찾기 설정"
+            aria-expanded={showFavoritePicker}
           >
-            <Star size={20} className="text-[#C7C7CC]" />
+            <Star
+              size={18}
+              className={isFavoriteStation ? "text-[#C8A218]" : "text-[#8E8E93]"}
+              fill={isFavoriteStation ? "#C8A218" : "transparent"}
+            />
           </button>
         </div>
       </div>
@@ -99,6 +182,74 @@ export default function StationInfo() {
           </div>
         </div>
       )}
+
+      <AnimatePresence initial={false}>
+        {showFavoritePicker && (
+          <motion.div
+            key="station-favorite-picker"
+            initial={{ opacity: 0, y: -8, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: "auto" }}
+            exit={{ opacity: 0, y: -6, height: 0 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden px-4 pt-4"
+          >
+            <div className="ios-card p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[13px] font-bold text-[#1B2838]">자주 가는 역으로 설정</p>
+                  <p className="mt-0.5 text-[11px] font-medium text-[#8E8E93]">
+                    집, 회사, 학교 중 하나로 저장합니다
+                  </p>
+                </div>
+                {isFavoriteStation && (
+                  <span className="shrink-0 rounded-full bg-[#FFF7D9] px-2 py-1 text-[10px] font-bold text-[#9C7A00]">
+                    설정됨
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {STATION_FAVORITE_KINDS.map(({ kind, label }) => {
+                  const Icon = stationFavoriteIconMap[kind];
+                  const favorite = stationFavoriteMap[kind];
+                  const isSelected = favorite?.stationName === decodedName;
+                  const color = stationFavoriteColorMap[kind];
+
+                  return (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => handleToggleStationFavorite(kind)}
+                      className={`btn-press min-w-0 rounded-2xl border px-2 py-3 text-left transition-all ${
+                        isSelected
+                          ? "border-transparent text-white shadow-sm"
+                          : "border-[#ECECF1] bg-[#F8F8FA] text-[#1B2838]"
+                      }`}
+                      style={isSelected ? { backgroundColor: color } : undefined}
+                    >
+                      <span className="mb-2 flex items-center justify-between gap-1">
+                        <Icon
+                          size={16}
+                          className={isSelected ? "text-white" : ""}
+                          style={isSelected ? undefined : { color }}
+                        />
+                        {isSelected && <Check size={14} className="text-white" />}
+                      </span>
+                      <span className="block truncate text-[12px] font-bold">{label}</span>
+                      <span
+                        className={`mt-0.5 block truncate text-[10px] font-medium ${
+                          isSelected ? "text-white/80" : "text-[#8E8E93]"
+                        }`}
+                      >
+                        {favorite?.stationName ?? "미설정"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Realtime Arrival info */}
       <motion.div
@@ -164,6 +315,82 @@ export default function StationInfo() {
           </p>
         )}
       </motion.div>
+
+      {/* 첫차 / 막차 */}
+      {firstLast && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.05, ease: [0.23, 1, 0.32, 1] }}
+          className="px-4 mt-4"
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 text-[14px] font-semibold text-[#1B2838]">
+              <Clock size={16} style={{ color: line?.color }} />
+              첫차 · 막차
+              <span className="rounded bg-[#F0F0F2] px-1.5 py-0.5 text-[10px] text-[#8E8E93]">
+                참고용
+              </span>
+            </h3>
+            <div className="flex shrink-0 rounded-full bg-[#F5F5F7] p-0.5 text-[11px] font-semibold">
+              {(["weekday", "weekend"] as DayType[]).map(dt => (
+                <button
+                  key={dt}
+                  type="button"
+                  onClick={() => setScheduleDayType(dt)}
+                  className={`btn-press rounded-full px-3 py-1 transition-colors ${
+                    scheduleDayType === dt
+                      ? "bg-white text-[#1B2838] shadow-sm"
+                      : "text-[#8E8E93]"
+                  }`}
+                >
+                  {dt === "weekday" ? "평일" : "주말"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="ios-card p-4">
+              <p className="text-[11px] text-[#8E8E93]">
+                {firstLast.downTerminus} 방면
+              </p>
+              <div className="mt-2 space-y-1.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[11px] text-[#8E8E93]">첫차</span>
+                  <span className="text-[18px] font-bold tracking-tight text-[#1B2838]">
+                    {firstLast.downFirst}
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[11px] text-[#8E8E93]">막차</span>
+                  <span className="text-[18px] font-bold tracking-tight text-[#1B2838]">
+                    {firstLast.downLast}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="ios-card p-4">
+              <p className="text-[11px] text-[#8E8E93]">
+                {firstLast.upTerminus} 방면
+              </p>
+              <div className="mt-2 space-y-1.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[11px] text-[#8E8E93]">첫차</span>
+                  <span className="text-[18px] font-bold tracking-tight text-[#1B2838]">
+                    {firstLast.upFirst}
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[11px] text-[#8E8E93]">막차</span>
+                  <span className="text-[18px] font-bold tracking-tight text-[#1B2838]">
+                    {firstLast.upLast}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Transfer info */}
       {stations.length > 1 && (

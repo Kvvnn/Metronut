@@ -5,13 +5,36 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent, TouchEvent, WheelEvent } from "react";
-import { CircleDot, Flag, MapPin, Maximize2, Plus, Train, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  Briefcase,
+  Check,
+  CircleDot,
+  Flag,
+  GraduationCap,
+  House,
+  Info,
+  Maximize2,
+  Plus,
+  Star,
+  Train,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
 import metroData from "@/data/metroData.json";
 import officialMapCoords from "@/data/officialMapCoords.json";
 import { getRealtimeArrivals } from "@/lib/realtimeApi";
 import type { ArrivalInfo } from "@/lib/realtimeApi";
 import type { Station } from "@/lib/pathfinder";
+import {
+  getStationFavoriteMap,
+  removeStationFavorite,
+  setStationFavorite,
+  STATION_FAVORITE_KINDS,
+  type StationFavoriteKind,
+  type StationFavoriteMap,
+} from "@/lib/stationFavorites";
 
 interface OfficialMapCoords {
   metadata: {
@@ -65,6 +88,18 @@ const STATION_ROLE_OPTIONS = [
   { role: "via" as const, label: "경유지로", Icon: Plus, color: "#27AE60" },
   { role: "to" as const, label: "도착지로", Icon: Flag, color: "#E74C3C" },
 ];
+
+const STATION_FAVORITE_ICON_MAP = {
+  home: House,
+  work: Briefcase,
+  school: GraduationCap,
+} satisfies Record<StationFavoriteKind, typeof House>;
+
+const STATION_FAVORITE_COLOR_MAP = {
+  home: "#4A90D9",
+  work: "#7C5CFF",
+  school: "#27AE60",
+} satisfies Record<StationFavoriteKind, string>;
 
 const ROLE_COLOR_MAP: Record<StationRole, string> = {
   from: "#4A90D9",
@@ -139,6 +174,10 @@ export default function MetroMap({
   const [stationMenu, setStationMenu] = useState<MapStation | null>(null);
   const [menuArrivals, setMenuArrivals] = useState<ArrivalInfo[]>([]);
   const [menuArrivalsLoading, setMenuArrivalsLoading] = useState(false);
+  const [showStationFavoritePicker, setShowStationFavoritePicker] = useState(false);
+  const [stationFavoriteMap, setStationFavoriteMap] = useState<StationFavoriteMap>(() =>
+    getStationFavoriteMap(),
+  );
 
   const lastTouchDist = useRef<number | null>(null);
   const hasDragged = useRef(false);
@@ -209,6 +248,26 @@ export default function MetroMap({
     }));
   }, [highlightedStation, uniqueStations]);
 
+  const refreshStationFavorites = useCallback(() => {
+    setStationFavoriteMap(getStationFavoriteMap());
+  }, []);
+
+  useEffect(() => {
+    refreshStationFavorites();
+    window.addEventListener("storage", refreshStationFavorites);
+    window.addEventListener("metro:station-favorites-changed", refreshStationFavorites);
+    return () => {
+      window.removeEventListener("storage", refreshStationFavorites);
+      window.removeEventListener("metro:station-favorites-changed", refreshStationFavorites);
+    };
+  }, [refreshStationFavorites]);
+
+  useEffect(() => {
+    if (!stationMenu) {
+      setShowStationFavoritePicker(false);
+    }
+  }, [stationMenu]);
+
   // 메뉴 열릴 때 실시간 도착정보 조회 (방향별로 최대 2개씩)
   useEffect(() => {
     if (!stationMenu) {
@@ -275,22 +334,25 @@ export default function MetroMap({
     const point = svgToContainerPoint(stationMenu);
     if (!point) return null;
 
-    const halfWidth = 120; // 14rem 카드의 반
+    const halfWidth = 120; // w-60 카드의 반
+    const estimatedHeight = showStationFavoritePicker ? 366 : 298;
     const edgeGap = 10;
     const minLeft = Math.min(halfWidth + edgeGap, point.containerWidth / 2);
     const maxLeft = Math.max(minLeft, point.containerWidth - halfWidth - edgeGap);
     const left = Math.min(Math.max(point.x, minLeft), maxLeft);
-    const placeAbove = point.y > 220;
+    const hasRoomAbove = point.y - 14 - estimatedHeight >= edgeGap;
+    const hasRoomBelow = point.y + 14 + estimatedHeight <= point.containerHeight - edgeGap;
+    const placeAbove = hasRoomAbove || (!hasRoomBelow && point.y > point.containerHeight / 2);
     const top = placeAbove
-      ? Math.max(edgeGap, point.y - 14)
-      : Math.min(point.containerHeight - edgeGap, point.y + 14);
+      ? Math.min(point.containerHeight - edgeGap, Math.max(edgeGap + estimatedHeight, point.y - 14))
+      : Math.max(edgeGap, Math.min(point.containerHeight - edgeGap - estimatedHeight, point.y + 14));
 
     return {
       left,
       top,
       transform: placeAbove ? "translate(-50%, -100%)" : "translate(-50%, 0)",
     };
-  }, [stationMenu, svgToContainerPoint]);
+  }, [showStationFavoritePicker, stationMenu, svgToContainerPoint]);
 
   const zoomAt = useCallback((factor: number, center?: { x: number; y: number }) => {
     setViewBox(prev => {
@@ -434,13 +496,38 @@ export default function MetroMap({
 
     const encodedName = encodeURIComponent(name);
     if (role === "from") {
-      setLocation(`/search?type=to&from=${encodedName}`);
+      setLocation(`/?from=${encodedName}`);
     } else if (role === "to") {
-      setLocation(`/search?type=from&to=${encodedName}`);
+      setLocation(`/?to=${encodedName}`);
     } else {
       setLocation(`/?via=${encodedName}`);
     }
   }, [onStationRoleSelect, onStationSelect, setLocation, stationMenu]);
+
+  const handleOpenStationInfo = useCallback(() => {
+    if (!stationMenu) return;
+    const encodedName = encodeURIComponent(stationMenu.name);
+    setStationMenu(null);
+    setLocation(`/station/${encodedName}`);
+  }, [setLocation, stationMenu]);
+
+  const handleToggleStationFavorite = useCallback((kind: StationFavoriteKind) => {
+    if (!stationMenu) return;
+
+    const favorite = stationFavoriteMap[kind];
+    const label = STATION_FAVORITE_KINDS.find(item => item.kind === kind)?.label ?? "즐겨찾기";
+
+    if (favorite?.stationName === stationMenu.name) {
+      removeStationFavorite(kind);
+      refreshStationFavorites();
+      toast(`${label} 설정을 해제했습니다`);
+      return;
+    }
+
+    setStationFavorite(kind, stationMenu.name, stationMenu.lineId);
+    refreshStationFavorites();
+    toast(`${stationMenu.name}역을 ${label}으로 설정했습니다`);
+  }, [refreshStationFavorites, stationFavoriteMap, stationMenu]);
 
   const handleMapClick = useCallback((event: MouseEvent<SVGSVGElement>) => {
     if (hasDragged.current) return;
@@ -454,6 +541,12 @@ export default function MetroMap({
 
   const hitRadius = Math.max(10, Math.min(30, viewBox.w * 0.012));
   const ringRadius = Math.max(12, hitRadius * 1.25);
+  const stationMenuFavoriteLabels = stationMenu
+    ? STATION_FAVORITE_KINDS
+      .filter(({ kind }) => stationFavoriteMap[kind]?.stationName === stationMenu.name)
+      .map(({ label }) => label)
+    : [];
+  const isStationMenuFavorite = stationMenuFavoriteLabels.length > 0;
 
   return (
     <div className="relative w-full h-full bg-white" ref={containerRef}>
@@ -566,14 +659,22 @@ export default function MetroMap({
           aria-label={`${stationMenu.name}역 선택 메뉴`}
         >
           {/* Header */}
-          <div className="flex items-center gap-2 px-1.5 py-1.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F5F5F7] text-[#1B2838]">
-              <MapPin size={15} />
-            </span>
+          <div className="flex items-start gap-2 px-1.5 py-1.5">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[14px] font-semibold text-[#1B2838]">
-                {stationMenu.name}
-              </p>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <p className="truncate text-[14px] font-semibold text-[#1B2838]">
+                  {stationMenu.name}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleOpenStationInfo}
+                  className="btn-press flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F5F5F7] text-[#1B2838] transition-colors hover:bg-[#EDEDF2] focus:bg-[#EDEDF2] focus:outline-none"
+                  aria-label={`${stationMenu.name}역 정보 보기`}
+                  title={`${stationMenu.name}역 정보 보기`}
+                >
+                  <Info size={14} />
+                </button>
+              </div>
               {getStationRole(stationMenu.name) && (
                 <p
                   className="text-[10px] font-bold"
@@ -582,8 +683,72 @@ export default function MetroMap({
                   현재: {ROLE_LABEL_MAP[getStationRole(stationMenu.name)!]}지
                 </p>
               )}
+              {isStationMenuFavorite && (
+                <p className="truncate text-[10px] font-bold text-[#9C7A00]">
+                  내 장소: {stationMenuFavoriteLabels.join(", ")}
+                </p>
+              )}
             </div>
+            <button
+              type="button"
+              onClick={() => setShowStationFavoritePicker(value => !value)}
+              className={`btn-press flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+                showStationFavoritePicker || isStationMenuFavorite
+                  ? "bg-[#FFF7D9]"
+                  : "bg-[#F5F5F7]"
+              }`}
+              aria-label="역 즐겨찾기 설정"
+              aria-expanded={showStationFavoritePicker}
+            >
+              <Star
+                size={16}
+                className={isStationMenuFavorite ? "text-[#C8A218]" : "text-[#8E8E93]"}
+                fill={isStationMenuFavorite ? "#C8A218" : "transparent"}
+              />
+            </button>
           </div>
+
+          {showStationFavoritePicker && (
+            <div className="mb-1.5 grid grid-cols-3 gap-1">
+              {STATION_FAVORITE_KINDS.map(({ kind, label }) => {
+                const Icon = STATION_FAVORITE_ICON_MAP[kind];
+                const favorite = stationFavoriteMap[kind];
+                const isSelected = favorite?.stationName === stationMenu.name;
+                const color = STATION_FAVORITE_COLOR_MAP[kind];
+
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    onClick={() => handleToggleStationFavorite(kind)}
+                    className={`btn-press min-w-0 rounded-xl border px-1.5 py-2 text-left transition-all ${
+                      isSelected
+                        ? "border-transparent text-white shadow-sm"
+                        : "border-[#ECECF1] bg-[#F8F9FB] text-[#1B2838]"
+                    }`}
+                    style={isSelected ? { backgroundColor: color } : undefined}
+                  >
+                    <span className="mb-1 flex items-center justify-between gap-1">
+                      <Icon
+                        size={13}
+                        className={isSelected ? "text-white" : ""}
+                        style={isSelected ? undefined : { color }}
+                      />
+                      {isSelected && <Check size={12} className="text-white" />}
+                    </span>
+                    <span className="block truncate text-[10.5px] font-bold">{label}</span>
+                    <span
+                      className={`mt-0.5 block truncate text-[9.5px] font-semibold ${
+                        isSelected ? "text-white/80" : "text-[#8E8E93]"
+                      }`}
+                    >
+                      {favorite?.stationName ?? "미설정"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Arrivals */}
           <div className="mt-1 rounded-xl bg-[#F8F9FB] px-2 py-2">

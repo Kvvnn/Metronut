@@ -1,11 +1,10 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Redirect, Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
-import Search from "./pages/Search";
 import RouteResult from "./pages/RouteResult";
 import RouteDetail from "./pages/RouteDetail";
 import Riding from "./pages/Riding";
@@ -18,7 +17,9 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
-      <Route path="/search" component={Search} />
+      <Route path="/search">
+        <Redirect to="/" replace />
+      </Route>
       <Route path="/route-result" component={RouteResult} />
       <Route path="/route-detail/:id" component={RouteDetail} />
       <Route path="/riding" component={Riding} />

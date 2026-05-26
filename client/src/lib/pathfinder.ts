@@ -4,6 +4,7 @@
  */
 
 import metroData from '@/data/metroData.json';
+import { getOfficialTransferInfo } from '@/data/officialTransferTimes';
 
 export interface Station {
   id: string;
@@ -12,6 +13,23 @@ export interface Station {
   lineId: string;
   transfers: string[];
   index: number;
+  /** 노선 내 분기 (예: '본선', '경인선', '경부장항선', '성수지선', '신정지선', '마천지선') */
+  branch?: string;
+}
+
+/**
+ * 노선별 운행 패턴 (어느 행 열차가 어디까지 가는지).
+ * 1호선처럼 같은 노선이 본선/경인선/경부선으로 분기되거나, 5호선의 마천지선처럼
+ * 분기점에서 종착이 갈리는 경우 사용자에게 "○○행 열차 탑승"으로 안내.
+ */
+export interface OperatingPattern {
+  id: string;
+  /** 이 운행이 지나는 분기 (예: ['본선','경인선']) — 모두 포함되어야 매칭 */
+  branches: string[];
+  /** 종착역 이름 */
+  terminus: string;
+  /** UI 표시용 라벨 */
+  label: string;
 }
 
 export interface Edge {
@@ -46,6 +64,11 @@ export interface RouteSegment {
   stations: Station[];
   time: number;
   isTransfer: boolean;
+  /** 공식 환승 동선 초 단위 원자료. 없으면 기본 분 단위 추정값을 사용. */
+  transferSeconds?: number;
+  transferDistanceMeters?: number;
+  /** 이 ride 구간에 적합한 운행 패턴 (예: '인천행'). transfer면 undefined */
+  pattern?: OperatingPattern;
 }
 
 export interface Route {
@@ -63,12 +86,192 @@ export interface Route {
 const stationMap = new Map<string, Station>();
 const stationsByName = new Map<string, Station[]>();
 const lineMap = new Map<string, Line>();
-const adjacencyList = new Map<string, { to: string; lineId: string; time: number; isTransfer: boolean }[]>();
+const adjacencyList = new Map<string, AdjacentEdge[]>();
+const patternsByLine = new Map<string, OperatingPattern[]>();
+
+const TRANSFER_TIME = 3;
+export const LONG_TRANSFER_THRESHOLD_SECONDS = 240;
+const STATE_SEPARATOR = "::";
+const LONG_ACCESS_LINE_PENALTY: Record<string, number> = {
+  airport: 8,
+  gtxa: 12,
+};
+const VIRTUAL_LINE_TO_BASE: Record<string, string> = {
+  "2-seongsu": "2",
+  "2-sinjeong": "2",
+};
+
+const VIRTUAL_LINES: Line[] = [
+  {
+    id: "2-seongsu",
+    name: "2호선 성수지선",
+    color: "#00A84D",
+    shortName: "성수지선",
+  },
+  {
+    id: "2-sinjeong",
+    name: "2호선 신정지선",
+    color: "#00A84D",
+    shortName: "신정지선",
+  },
+];
+
+const VIRTUAL_LINE_STATION_IDS: Record<string, string[]> = {
+  "2-seongsu": ["2_210", "2_243", "2_244", "2_245", "2_246"],
+  "2-sinjeong": ["2_233", "2_247", "2_248", "2_249", "2_250"],
+};
+
+interface TransferDetails {
+  time: number;
+  transferSeconds?: number;
+  transferDistanceMeters?: number;
+}
+
+interface AdjacentEdge extends TransferDetails {
+  to: string;
+  lineId: string;
+  isTransfer: boolean;
+}
+
+function getBaseLineId(lineId: string) {
+  return VIRTUAL_LINE_TO_BASE[lineId] ?? lineId;
+}
+
+function getStationEffectiveLineId(station: Station, fallbackLineId = station.lineId) {
+  if (fallbackLineId === "2") {
+    if (station.branch === "성수지선") return "2-seongsu";
+    if (station.branch === "신정지선") return "2-sinjeong";
+  }
+  return fallbackLineId;
+}
+
+function getEffectiveEdgeLineId(lineId: string, fromStation: Station, toStation: Station) {
+  if (lineId === "2") {
+    if (fromStation.branch === "성수지선" || toStation.branch === "성수지선") {
+      return "2-seongsu";
+    }
+    if (fromStation.branch === "신정지선" || toStation.branch === "신정지선") {
+      return "2-sinjeong";
+    }
+  }
+  return lineId;
+}
+
+function makeStateKey(stationId: string, lineId: string) {
+  return `${stationId}${STATE_SEPARATOR}${lineId}`;
+}
+
+function parseStateKey(key: string) {
+  const separatorIndex = key.indexOf(STATE_SEPARATOR);
+  if (separatorIndex < 0) return { stationId: key, lineId: "" };
+  return {
+    stationId: key.slice(0, separatorIndex),
+    lineId: key.slice(separatorIndex + STATE_SEPARATOR.length),
+  };
+}
+
+function getLineChangePenalty(fromLineId: string, toLineId: string) {
+  if (!fromLineId || fromLineId === toLineId) return 0;
+  const fromPenalty = LONG_ACCESS_LINE_PENALTY[getBaseLineId(fromLineId)] ?? 0;
+  const toPenalty = LONG_ACCESS_LINE_PENALTY[getBaseLineId(toLineId)] ?? 0;
+  return Math.max(fromPenalty, toPenalty);
+}
+
+function getTransferDetails(
+  stationName: string,
+  fromLineId: string,
+  toLineId: string,
+  fallbackTime = TRANSFER_TIME,
+): TransferDetails {
+  const official = getOfficialTransferInfo(
+    stationName,
+    getBaseLineId(fromLineId),
+    getBaseLineId(toLineId),
+  );
+  if (!official) return { time: fallbackTime };
+
+  return {
+    time: Math.max(1, Math.ceil(official.seconds / 60)),
+    transferSeconds: official.seconds,
+    transferDistanceMeters: official.distanceMeters,
+  };
+}
+
+function getTransferTimeTotal(segments: RouteSegment[]) {
+  return segments
+    .filter(segment => segment.isTransfer)
+    .reduce((sum, segment) => sum + segment.time, 0);
+}
+
+export function isLongTransferSegment(segment: Pick<RouteSegment, "time" | "transferSeconds">) {
+  return (segment.transferSeconds ?? segment.time * 60) >= LONG_TRANSFER_THRESHOLD_SECONDS;
+}
+
+export function formatTransferDuration(segment: Pick<RouteSegment, "time" | "transferSeconds">) {
+  if (!segment.transferSeconds) return `약 ${segment.time}분`;
+
+  const minutes = Math.floor(segment.transferSeconds / 60);
+  const seconds = segment.transferSeconds % 60;
+  if (minutes === 0) return `${seconds}초`;
+  if (seconds === 0) return `${minutes}분`;
+  return `${minutes}분 ${seconds}초`;
+}
+
+// 한국어 자모 정렬용: 종착역이 현재 진행 방향에 있는지 보고 적합한 패턴 선택
+function chooseOperatingPattern(
+  lineId: string,
+  segmentStations: Station[],
+): OperatingPattern | undefined {
+  if (segmentStations.length < 2) return undefined;
+  const baseLineId = getBaseLineId(lineId);
+  const patterns = patternsByLine.get(baseLineId);
+  if (!patterns || patterns.length === 0) return undefined;
+
+  const last = segmentStations[segmentStations.length - 1];
+  // 이 ride 구간이 거치는 모든 분기 (보통 1~2개)
+  const usedBranches = new Set<string>();
+  segmentStations.forEach(s => {
+    if (s.branch) usedBranches.add(s.branch);
+  });
+
+  // 1순위: 종착역이 패턴의 terminus와 일치
+  const exactTerminus = patterns.filter(p => p.terminus === last.name);
+  if (exactTerminus.length > 0) {
+    const branchMatch = exactTerminus.find(p =>
+      Array.from(usedBranches).every(b => p.branches.includes(b)),
+    );
+    if (branchMatch) return branchMatch;
+    return exactTerminus[0];
+  }
+
+  // 2순위: 우리 사용 분기를 모두 포함하면서, 종착이 우리 마지막 역의 분기와 같은 패턴
+  const lastBranch = last.branch;
+  const candidates = patterns.filter(p =>
+    Array.from(usedBranches).every(b => p.branches.includes(b)),
+  );
+  if (candidates.length === 0) return patterns[0];
+
+  // 마지막 역의 분기와 같은 종착이 있는 패턴 우선
+  if (lastBranch) {
+    const sameBranchTerminus = candidates.find(p => {
+      const termStation = stationsByName
+        .get(p.terminus)
+        ?.find(s => s.lineId === baseLineId);
+      return termStation?.branch === lastBranch;
+    });
+    if (sameBranchTerminus) return sameBranchTerminus;
+  }
+
+  return candidates[0];
+}
 
 // 초기화
 function initializeGraph() {
   // 노선 맵
   metroData.lines.forEach((line: Line) => {
+    lineMap.set(line.id, line);
+  });
+  VIRTUAL_LINES.forEach(line => {
     lineMap.set(line.id, line);
   });
 
@@ -83,12 +286,18 @@ function initializeGraph() {
 
   // 인접 리스트 구축
   metroData.edges.forEach((edge: Edge) => {
+    const fromStation = stationMap.get(edge.from);
+    const toStation = stationMap.get(edge.to);
+    const lineId = fromStation && toStation
+      ? getEffectiveEdgeLineId(edge.lineId, fromStation, toStation)
+      : edge.lineId;
+
     if (!adjacencyList.has(edge.from)) {
       adjacencyList.set(edge.from, []);
     }
     adjacencyList.get(edge.from)!.push({
       to: edge.to,
-      lineId: edge.lineId,
+      lineId,
       time: edge.time,
       isTransfer: false,
     });
@@ -96,16 +305,36 @@ function initializeGraph() {
 
   // 환승 엣지 추가
   metroData.transfers.forEach((transfer: Transfer) => {
+    const toStation = stationMap.get(transfer.to);
+    const lineId = toStation
+      ? getStationEffectiveLineId(toStation, transfer.toLine)
+      : transfer.toLine;
+    const transferDetails = getTransferDetails(
+      transfer.stationName,
+      transfer.fromLine,
+      transfer.toLine,
+      transfer.time,
+    );
+
     if (!adjacencyList.has(transfer.from)) {
       adjacencyList.set(transfer.from, []);
     }
     adjacencyList.get(transfer.from)!.push({
       to: transfer.to,
-      lineId: transfer.toLine,
-      time: transfer.time,
+      lineId,
       isTransfer: true,
+      ...transferDetails,
     });
   });
+
+  // 운행 패턴 인덱싱 (라인별)
+  const patternsRaw = (metroData as { operatingPatterns?: Record<string, OperatingPattern[]> })
+    .operatingPatterns;
+  if (patternsRaw) {
+    Object.entries(patternsRaw).forEach(([lineId, list]) => {
+      patternsByLine.set(lineId, list);
+    });
+  }
 }
 
 initializeGraph();
@@ -146,6 +375,26 @@ interface DijkstraNode {
 }
 
 type SearchMode = 'fastest' | 'fewest-transfers' | 'least-walking';
+
+interface PreviousStep {
+  prevKey: string;
+  lineId: string;
+  isTransfer: boolean;
+  lineChanged: boolean;
+  transferTime: number;
+  transferSeconds?: number;
+  transferDistanceMeters?: number;
+}
+
+interface PathNode {
+  stationId: string;
+  lineId: string;
+  isTransfer: boolean;
+  lineChanged: boolean;
+  transferTime: number;
+  transferSeconds?: number;
+  transferDistanceMeters?: number;
+}
 
 /**
  * 경로 검색 메인 함수
@@ -214,8 +463,16 @@ function combineRoutesAtVia(firstLeg: Route, secondLeg: Route): Route {
   if (
     firstRide &&
     secondRide &&
-    firstRide.toStation.id !== secondRide.fromStation.id
+    (
+      firstRide.toStation.id !== secondRide.fromStation.id ||
+      firstRide.lineId !== secondRide.lineId
+    )
   ) {
+    const transferDetails = getTransferDetails(
+      firstRide.toStation.name,
+      firstRide.lineId,
+      secondRide.lineId,
+    );
     bridgeSegments.push({
       fromStation: firstRide.toStation,
       toStation: secondRide.fromStation,
@@ -223,8 +480,8 @@ function combineRoutesAtVia(firstLeg: Route, secondLeg: Route): Route {
       lineName: '경유 환승',
       lineColor: '#888',
       stations: [firstRide.toStation, secondRide.fromStation],
-      time: 3,
       isTransfer: true,
+      ...transferDetails,
     });
   }
 
@@ -237,6 +494,7 @@ function combineRoutesAtVia(firstLeg: Route, secondLeg: Route): Route {
   const stationCount = segments
     .filter(segment => !segment.isTransfer)
     .reduce((sum, segment) => sum + segment.stations.length - 1, 0);
+  const transferTime = getTransferTimeTotal(segments);
 
   return {
     segments,
@@ -244,7 +502,7 @@ function combineRoutesAtVia(firstLeg: Route, secondLeg: Route): Route {
     transferCount,
     stationCount,
     fare: calculateFare(stationCount),
-    walkTime: transferCount * 3,
+    walkTime: transferTime,
   };
 }
 
@@ -258,49 +516,80 @@ function isDuplicateRoute(routes: Route[], newRoute: Route): boolean {
 
 function dijkstra(fromStations: Station[], toStations: Station[], mode: SearchMode): Route | null {
   const dist = new Map<string, number>();
-  const prev = new Map<string, { stationId: string; lineId: string; isTransfer: boolean } | null>();
+  const prev = new Map<string, PreviousStep | null>();
   const transferCount = new Map<string, number>();
   const pq = new PriorityQueue<string>();
   const toIds = new Set(toStations.map(s => s.id));
 
   // 출발역들 초기화
   fromStations.forEach(station => {
-    dist.set(station.id, 0);
-    prev.set(station.id, null);
-    transferCount.set(station.id, 0);
-    pq.enqueue(station.id, 0);
+    const stateKey = makeStateKey(station.id, "");
+    dist.set(stateKey, 0);
+    prev.set(stateKey, null);
+    transferCount.set(stateKey, 0);
+    pq.enqueue(stateKey, 0);
   });
 
   while (!pq.isEmpty()) {
-    const current = pq.dequeue()!;
-    const currentDist = dist.get(current) ?? Infinity;
+    const currentKey = pq.dequeue()!;
+    const { stationId: currentStationId, lineId: currentLineId } = parseStateKey(currentKey);
+    const currentDist = dist.get(currentKey) ?? Infinity;
 
     // 도착역 도달
-    if (toIds.has(current)) {
-      return reconstructRoute(current, prev, dist);
+    if (toIds.has(currentStationId)) {
+      return reconstructRoute(currentKey, prev, dist);
     }
 
-    const neighbors = adjacencyList.get(current) || [];
+    const neighbors = adjacencyList.get(currentStationId) || [];
     for (const neighbor of neighbors) {
-      let weight = neighbor.time;
-      const currentTransfers = transferCount.get(current) ?? 0;
-      const newTransfers = currentTransfers + (neighbor.isTransfer ? 1 : 0);
+      const lineChanged = Boolean(currentLineId && neighbor.lineId !== currentLineId);
+      const countsAsTransfer = neighbor.isTransfer || lineChanged;
+      const currentStation = stationMap.get(currentStationId);
+      const implicitTransferDetails = countsAsTransfer && !neighbor.isTransfer && currentStation
+        ? getTransferDetails(currentStation.name, currentLineId, neighbor.lineId)
+        : { time: TRANSFER_TIME };
+      const transferTime = countsAsTransfer
+        ? neighbor.isTransfer ? neighbor.time : implicitTransferDetails.time
+        : 0;
+      const transferSeconds = countsAsTransfer
+        ? neighbor.isTransfer ? neighbor.transferSeconds : implicitTransferDetails.transferSeconds
+        : undefined;
+      const transferDistanceMeters = countsAsTransfer
+        ? neighbor.isTransfer ? neighbor.transferDistanceMeters : implicitTransferDetails.transferDistanceMeters
+        : undefined;
+      const searchTransferPenalty = countsAsTransfer
+        ? getLineChangePenalty(currentLineId, neighbor.lineId)
+        : 0;
+      let weight = neighbor.isTransfer
+        ? transferTime + searchTransferPenalty
+        : neighbor.time + transferTime + searchTransferPenalty;
+      const currentTransfers = transferCount.get(currentKey) ?? 0;
+      const newTransfers = currentTransfers + (countsAsTransfer ? 1 : 0);
 
       // 모드별 가중치 조정
-      if (mode === 'fewest-transfers' && neighbor.isTransfer) {
+      if (mode === 'fewest-transfers' && countsAsTransfer) {
         weight += 15; // 환승에 높은 페널티
-      } else if (mode === 'least-walking' && neighbor.isTransfer) {
+      } else if (mode === 'least-walking' && countsAsTransfer) {
         weight += 8; // 도보(환승)에 중간 페널티
       }
 
       const newDist = currentDist + weight;
-      const existingDist = dist.get(neighbor.to) ?? Infinity;
+      const nextKey = makeStateKey(neighbor.to, neighbor.lineId);
+      const existingDist = dist.get(nextKey) ?? Infinity;
 
       if (newDist < existingDist) {
-        dist.set(neighbor.to, newDist);
-        prev.set(neighbor.to, { stationId: current, lineId: neighbor.lineId, isTransfer: neighbor.isTransfer });
-        transferCount.set(neighbor.to, newTransfers);
-        pq.enqueue(neighbor.to, newDist);
+        dist.set(nextKey, newDist);
+        prev.set(nextKey, {
+          prevKey: currentKey,
+          lineId: neighbor.lineId,
+          isTransfer: neighbor.isTransfer,
+          lineChanged: lineChanged && !neighbor.isTransfer,
+          transferTime,
+          transferSeconds,
+          transferDistanceMeters,
+        });
+        transferCount.set(nextKey, newTransfers);
+        pq.enqueue(nextKey, newDist);
       }
     }
   }
@@ -309,25 +598,41 @@ function dijkstra(fromStations: Station[], toStations: Station[], mode: SearchMo
 }
 
 function reconstructRoute(
-  endId: string,
-  prev: Map<string, { stationId: string; lineId: string; isTransfer: boolean } | null>,
+  endKey: string,
+  prev: Map<string, PreviousStep | null>,
   dist: Map<string, number>
 ): Route {
-  const path: { stationId: string; lineId: string; isTransfer: boolean }[] = [];
-  let current: string | null = endId;
+  const path: PathNode[] = [];
+  let current: string | null = endKey;
 
   while (current) {
     const prevNode = prev.get(current);
     if (!prevNode) break;
-    path.unshift({ stationId: current, lineId: prevNode.lineId, isTransfer: prevNode.isTransfer });
-    current = prevNode.stationId;
+    const { stationId } = parseStateKey(current);
+    path.unshift({
+      stationId,
+      lineId: prevNode.lineId,
+      isTransfer: prevNode.isTransfer,
+      lineChanged: prevNode.lineChanged,
+      transferTime: prevNode.transferTime,
+      transferSeconds: prevNode.transferSeconds,
+      transferDistanceMeters: prevNode.transferDistanceMeters,
+    });
+    current = prevNode.prevKey;
   }
 
   // 첫 번째 역 추가
   if (current) {
-    const firstStation = stationMap.get(current);
+    const { stationId } = parseStateKey(current);
+    const firstStation = stationMap.get(stationId);
     if (firstStation) {
-      path.unshift({ stationId: current, lineId: firstStation.lineId, isTransfer: false });
+      path.unshift({
+        stationId,
+        lineId: path[0]?.lineId ?? getStationEffectiveLineId(firstStation),
+        isTransfer: false,
+        lineChanged: false,
+        transferTime: 0,
+      });
     }
   }
 
@@ -335,7 +640,21 @@ function reconstructRoute(
   const segments: RouteSegment[] = [];
   let currentSegmentStations: Station[] = [];
   let currentLine = '';
-  let segmentStartIdx = 0;
+  const pushRideSegment = () => {
+    if (currentSegmentStations.length <= 1) return;
+    const line = lineMap.get(currentLine)!;
+    segments.push({
+      fromStation: currentSegmentStations[0],
+      toStation: currentSegmentStations[currentSegmentStations.length - 1],
+      lineId: currentLine,
+      lineName: line?.name || currentLine,
+      lineColor: line?.color || '#888',
+      stations: [...currentSegmentStations],
+      time: (currentSegmentStations.length - 1) * (getLineDefaultTime(currentLine)),
+      isTransfer: false,
+      pattern: chooseOperatingPattern(currentLine, currentSegmentStations),
+    });
+  };
 
   for (let i = 0; i < path.length; i++) {
     const node = path[i];
@@ -349,19 +668,7 @@ function reconstructRoute(
 
     if (node.isTransfer) {
       // 현재 세그먼트 마무리
-      if (currentSegmentStations.length > 0) {
-        const line = lineMap.get(currentLine)!;
-        segments.push({
-          fromStation: currentSegmentStations[0],
-          toStation: currentSegmentStations[currentSegmentStations.length - 1],
-          lineId: currentLine,
-          lineName: line?.name || currentLine,
-          lineColor: line?.color || '#888',
-          stations: [...currentSegmentStations],
-          time: (currentSegmentStations.length - 1) * (getLineDefaultTime(currentLine)),
-          isTransfer: false,
-        });
-      }
+      pushRideSegment();
 
       // 환승 세그먼트
       const prevStation = currentSegmentStations[currentSegmentStations.length - 1] || station;
@@ -372,42 +679,47 @@ function reconstructRoute(
         lineName: '환승',
         lineColor: '#888',
         stations: [prevStation, station],
-        time: 3,
+        time: node.transferTime || TRANSFER_TIME,
         isTransfer: true,
+        transferSeconds: node.transferSeconds,
+        transferDistanceMeters: node.transferDistanceMeters,
       });
 
       currentLine = node.lineId;
       currentSegmentStations = [station];
+    } else if (node.lineChanged || node.lineId !== currentLine) {
+      pushRideSegment();
+
+      const prevStation = currentSegmentStations[currentSegmentStations.length - 1] || station;
+      segments.push({
+        fromStation: prevStation,
+        toStation: prevStation,
+        lineId: node.lineId,
+        lineName: '환승',
+        lineColor: '#888',
+        stations: [prevStation, prevStation],
+        time: node.transferTime || TRANSFER_TIME,
+        isTransfer: true,
+        transferSeconds: node.transferSeconds,
+        transferDistanceMeters: node.transferDistanceMeters,
+      });
+
+      currentLine = node.lineId;
+      currentSegmentStations = [prevStation, station];
     } else {
-      if (node.lineId !== currentLine && currentSegmentStations.length > 0) {
-        // 노선 변경 (환승 아닌 경우)
-        currentLine = node.lineId;
-      }
       currentSegmentStations.push(station);
     }
   }
 
   // 마지막 세그먼트
-  if (currentSegmentStations.length > 1) {
-    const line = lineMap.get(currentLine)!;
-    segments.push({
-      fromStation: currentSegmentStations[0],
-      toStation: currentSegmentStations[currentSegmentStations.length - 1],
-      lineId: currentLine,
-      lineName: line?.name || currentLine,
-      lineColor: line?.color || '#888',
-      stations: [...currentSegmentStations],
-      time: (currentSegmentStations.length - 1) * (getLineDefaultTime(currentLine)),
-      isTransfer: false,
-    });
-  }
+  pushRideSegment();
 
   const nonTransferSegments = segments.filter(s => !s.isTransfer);
   const totalTime = Math.round(segments.reduce((sum, s) => sum + s.time, 0));
   const transferCountVal = segments.filter(s => s.isTransfer).length;
   const stationCount = nonTransferSegments.reduce((sum, s) => sum + s.stations.length - 1, 0);
   const fare = calculateFare(stationCount);
-  const walkTime = transferCountVal * 3;
+  const walkTime = getTransferTimeTotal(segments);
 
   return {
     segments,
@@ -421,7 +733,7 @@ function reconstructRoute(
 
 function getLineDefaultTime(lineId: string): number {
   const times: Record<string, number> = {
-    "1": 2.5, "2": 2, "3": 2.5, "4": 2.5, "5": 2.5,
+    "1": 2.5, "2": 2, "2-seongsu": 2, "2-sinjeong": 2, "3": 2.5, "4": 2.5, "5": 2.5,
     "6": 2, "7": 2.5, "8": 2.5, "9": 2,
     "gyeongui": 3, "airport": 4, "shinbundang": 2.5,
     "gyeongchun": 3.5, "suinbundang": 2.5, "ui": 2,
@@ -493,8 +805,16 @@ export function getAllLines(): Line[] {
  * 특정 노선의 모든 역
  */
 export function getStationsByLine(lineId: string): Station[] {
+  const virtualStationIds = VIRTUAL_LINE_STATION_IDS[lineId];
+  if (virtualStationIds) {
+    return virtualStationIds
+      .map(id => stationMap.get(id))
+      .filter((station): station is Station => Boolean(station));
+  }
+
   return (metroData.stations as Station[])
     .filter(s => s.lineId === lineId)
+    .filter(s => lineId !== "2" || s.branch === "본선")
     .sort((a, b) => a.index - b.index);
 }
 

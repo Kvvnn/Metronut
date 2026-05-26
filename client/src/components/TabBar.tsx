@@ -7,18 +7,10 @@ const tabs = [
   { path: "/settings", icon: Settings, label: "설정" },
 ];
 
-// 탭 바를 숨길 페이지
-const hiddenPaths = ["/route-result", "/route-detail", "/station", "/map"];
-
 const PRIMARY_COLOR = "#4A90D9";
 
 export default function TabBar() {
   const [location, setLocation] = useLocation();
-
-  const shouldHide = hiddenPaths.some(p => {
-    return location.startsWith(p);
-  });
-  if (shouldHide) return null;
 
   return (
     <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] tab-bar safe-bottom z-50">

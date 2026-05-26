@@ -9,23 +9,53 @@
  * - 최근 검색은 하단에 컴팩트하게
  */
 import { useLocation, useSearch } from "wouter";
-import { Search, ArrowRightLeft, Clock, Star, ChevronRight, Plus, X } from "lucide-react";
+import {
+  Search,
+  ArrowRightLeft,
+  Clock,
+  Star,
+  ChevronRight,
+  Plus,
+  X,
+  Trash2,
+  House,
+  Briefcase,
+  GraduationCap,
+} from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useState, useCallback, useEffect } from "react";
 import MetroMap from "@/components/MetroMap";
 import type { StationRole } from "@/components/MetroMap";
 import RouteConfirmDialog from "@/components/RouteConfirmDialog";
 import StationSearchDropdown from "@/components/StationSearchDropdown";
+import {
+  getFavoriteRoutes,
+  removeFavoriteRoute,
+  type FavoriteRoute,
+} from "@/lib/routeFavorites";
+import {
+  getStationFavoriteMap,
+  STATION_FAVORITE_KINDS,
+  type StationFavoriteKind,
+  type StationFavoriteMap,
+} from "@/lib/stationFavorites";
+
+const stationFavoriteIconMap = {
+  home: House,
+  work: Briefcase,
+  school: GraduationCap,
+} satisfies Record<StationFavoriteKind, typeof House>;
+
+const stationFavoriteColorMap = {
+  home: "#4A90D9",
+  work: "#7C5CFF",
+  school: "#27AE60",
+} satisfies Record<StationFavoriteKind, string>;
 
 const recentRoutes = [
   { from: "강남", to: "홍대입구", time: "32분" },
   { from: "서울역", to: "잠실", time: "28분" },
   { from: "신도림", to: "왕십리", time: "25분" },
-];
-
-const favoriteRoutes = [
-  { from: "강남", to: "여의도", time: "35분" },
-  { from: "사당", to: "교대", time: "8분" },
 ];
 
 export default function Home() {
@@ -37,6 +67,10 @@ export default function Home() {
   const [via, setVia] = useState(searchParams.get("via") || "");
   const [isViaExpanded, setIsViaExpanded] = useState(Boolean(searchParams.get("via")));
   const [showRecent, setShowRecent] = useState(false);
+  const [favoriteRoutes, setFavoriteRoutes] = useState<FavoriteRoute[]>(() => getFavoriteRoutes());
+  const [stationFavoriteMap, setStationFavoriteMap] = useState<StationFavoriteMap>(() =>
+    getStationFavoriteMap(),
+  );
   const prefersReducedMotion = useReducedMotion();
   const showViaField = isViaExpanded || Boolean(via);
   const viaFieldTransition = {
@@ -55,6 +89,24 @@ export default function Home() {
     setVia(nextVia);
     setIsViaExpanded(Boolean(nextVia));
   }, [search]);
+
+  useEffect(() => {
+    const refreshFavorites = () => {
+      setFavoriteRoutes(getFavoriteRoutes());
+      setStationFavoriteMap(getStationFavoriteMap());
+    };
+    refreshFavorites();
+    window.addEventListener("storage", refreshFavorites);
+    window.addEventListener("metro:favorites-changed", refreshFavorites);
+    window.addEventListener("metro:station-favorites-changed", refreshFavorites);
+    window.addEventListener("focus", refreshFavorites);
+    return () => {
+      window.removeEventListener("storage", refreshFavorites);
+      window.removeEventListener("metro:favorites-changed", refreshFavorites);
+      window.removeEventListener("metro:station-favorites-changed", refreshFavorites);
+      window.removeEventListener("focus", refreshFavorites);
+    };
+  }, []);
 
   const handleStationRoleSelect = useCallback((name: string, role: StationRole) => {
     setConfirmDismissed(false);
@@ -84,9 +136,13 @@ export default function Home() {
     setIsViaExpanded(false);
   }, []);
 
-  const buildRouteResultPath = useCallback(() => {
-    const params = new URLSearchParams({ from, to });
-    if (via) params.set("via", via);
+  const buildRouteResultPath = useCallback((
+    routeFrom = from,
+    routeTo = to,
+    routeVia = via,
+  ) => {
+    const params = new URLSearchParams({ from: routeFrom, to: routeTo, origin: "home" });
+    if (routeVia) params.set("via", routeVia);
     return `/route-result?${params.toString()}`;
   }, [from, to, via]);
 
@@ -105,6 +161,20 @@ export default function Home() {
     setTo(from);
   };
 
+  const quickRoutes = showRecent ? recentRoutes : favoriteRoutes;
+  const stationFavoriteCount = STATION_FAVORITE_KINDS.filter(
+    ({ kind }) => stationFavoriteMap[kind],
+  ).length;
+  const favoriteItemCount = favoriteRoutes.length + stationFavoriteCount;
+  const quickAccessCount = showRecent ? recentRoutes.length : favoriteItemCount;
+
+  const handleFavoriteStationSelect = (stationName: string) => {
+    const targetField = searchField ?? (!from ? "from" : !to ? "to" : "to");
+    handleStationRoleSelect(stationName, targetField);
+    if (targetField === "via") setIsViaExpanded(true);
+    setSearchField(null);
+  };
+
   return (
     <div
       className="h-screen flex flex-col overflow-hidden"
@@ -115,7 +185,8 @@ export default function Home() {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
-        className="safe-top pt-3 px-4 pb-2 bg-white/95 backdrop-blur-lg z-30 border-b border-[#F0F0F2]/50"
+        className="px-4 pb-2 bg-white/95 backdrop-blur-lg z-30 border-b border-[#F0F0F2]/50"
+        style={{ paddingTop: "calc(max(28px, env(safe-area-inset-top, 0px) + 12px))" }}
       >
         {/* Compact search bar */}
         <div className="flex items-center gap-2">
@@ -278,48 +349,177 @@ export default function Home() {
         initial={{ y: 100 }}
         animate={{ y: 0 }}
         transition={{ duration: 0.5, delay: 0.3, ease: [0.23, 1, 0.32, 1] }}
-        className="bg-white border-t border-[#F0F0F2] safe-bottom z-20"
+        className="z-20 rounded-t-2xl border-t border-[#F0F0F2] bg-white/95 shadow-[0_-8px_24px_rgba(27,40,56,0.08)] backdrop-blur-md safe-bottom"
       >
-        {/* Toggle recent/favorites */}
-        <div className="flex items-center px-4 pt-2 pb-1">
-          <button
-            onClick={() => setShowRecent(false)}
-            className={`text-[12px] font-semibold mr-4 pb-1 border-b-2 transition-colors ${
-              !showRecent ? "text-[#1B2838] border-[#1B2838]" : "text-[#8E8E93] border-transparent"
-            }`}
-          >
-            즐겨찾기
-          </button>
-          <button
-            onClick={() => setShowRecent(true)}
-            className={`text-[12px] font-semibold pb-1 border-b-2 transition-colors ${
-              showRecent ? "text-[#1B2838] border-[#1B2838]" : "text-[#8E8E93] border-transparent"
-            }`}
-          >
-            최근 검색
-          </button>
-        </div>
+        <div className="sheet-handle" />
+        <div className="px-4 pb-3 pt-1">
+          {/* Toggle recent/favorites */}
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="flex rounded-2xl bg-[#F5F5F7] p-1">
+              <button
+                type="button"
+                onClick={() => setShowRecent(false)}
+                className={`btn-press flex min-h-8 items-center gap-1.5 rounded-xl px-3 text-[12px] font-bold transition-all ${
+                  !showRecent
+                    ? "bg-white text-[#1B2838] shadow-sm"
+                    : "text-[#8E8E93]"
+                }`}
+              >
+                <Star
+                  size={13}
+                  className={!showRecent ? "text-[#C8A218]" : "text-[#A7A7AD]"}
+                  fill={!showRecent ? "#C8A218" : "transparent"}
+                />
+                즐겨찾기
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowRecent(true)}
+                className={`btn-press flex min-h-8 items-center gap-1.5 rounded-xl px-3 text-[12px] font-bold transition-all ${
+                  showRecent
+                    ? "bg-white text-[#1B2838] shadow-sm"
+                    : "text-[#8E8E93]"
+                }`}
+              >
+                <Clock
+                  size={13}
+                  className={showRecent ? "text-[#4A90D9]" : "text-[#A7A7AD]"}
+                />
+                최근 검색
+              </button>
+            </div>
+            <span className="shrink-0 rounded-full bg-[#EEF3F8] px-2 py-1 text-[11px] font-semibold text-[#607083]">
+              {quickAccessCount}개
+            </span>
+          </div>
 
-        {/* Route list */}
-        <div className="px-4 pb-2 max-h-[120px] overflow-y-auto">
-          {(showRecent ? recentRoutes : favoriteRoutes).map((route, idx) => (
-            <button
-              key={idx}
-              className="w-full flex items-center py-2 btn-press"
-              onClick={() => setLocation(`/route-result?from=${encodeURIComponent(route.from)}&to=${encodeURIComponent(route.to)}`)}
-            >
-              {showRecent ? (
-                <Clock size={14} className="text-[#C7C7CC] mr-2.5 shrink-0" />
-              ) : (
-                <Star size={14} className="text-[#F1C40F] mr-2.5 shrink-0" fill="#F1C40F" />
-              )}
-              <span className="text-[13px] font-medium text-[#1B2838]">{route.from}</span>
-              <span className="text-[11px] text-[#8E8E93] mx-1.5">→</span>
-              <span className="text-[13px] font-medium text-[#1B2838]">{route.to}</span>
-              <span className="text-[12px] text-[#8E8E93] ml-auto">{route.time}</span>
-              <ChevronRight size={12} className="text-[#C7C7CC] ml-1" />
-            </button>
-          ))}
+          {!showRecent && (
+            <div className="mb-2 grid grid-cols-3 gap-2">
+              {STATION_FAVORITE_KINDS.map(({ kind, label }) => {
+                const favorite = stationFavoriteMap[kind];
+                const Icon = stationFavoriteIconMap[kind];
+                const color = stationFavoriteColorMap[kind];
+
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    disabled={!favorite}
+                    onClick={() => favorite && handleFavoriteStationSelect(favorite.stationName)}
+                    className={`btn-press min-w-0 rounded-2xl border px-2.5 py-2 text-left transition-all disabled:cursor-default ${
+                      favorite
+                        ? "border-[#ECECF1] bg-white text-[#1B2838]"
+                        : "border-[#ECECF1] bg-[#F8F8FA] text-[#A0A0A7]"
+                    }`}
+                  >
+                    <span className="mb-1 flex items-center gap-1.5">
+                      <Icon
+                        size={14}
+                        style={{ color: favorite ? color : "#A0A0A7" }}
+                      />
+                      <span className="text-[11px] font-bold">{label}</span>
+                    </span>
+                    <span className="block truncate text-[12px] font-bold">
+                      {favorite?.stationName ?? "미설정"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Route list */}
+          <div className="max-h-[128px] overflow-y-auto divide-y divide-[#F0F0F2]">
+            {favoriteItemCount === 0 && !showRecent ? (
+              <div className="flex min-h-[72px] items-center gap-3 py-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#FFF7D9]">
+                  <Star size={15} className="text-[#C8A218]" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-bold text-[#1B2838]">
+                    저장된 즐겨찾기가 없습니다
+                  </span>
+                  <span className="mt-0.5 block text-[11px] font-medium text-[#8E8E93]">
+                    역 상세에서 자주 가는 역을 설정하거나 경로 상세에서 별을 누르세요
+                  </span>
+                </span>
+              </div>
+            ) : quickRoutes.length === 0 && !showRecent ? null : (
+              quickRoutes.map((route, idx) => {
+                const isFavoriteItem = "id" in route;
+                const routeVia = isFavoriteItem ? route.via : "";
+                const routeKey = isFavoriteItem ? route.id : String(idx);
+                const routeMeta =
+                  !showRecent && isFavoriteItem && typeof route.transferCount === "number"
+                    ? `즐겨찾기 경로 · 환승 ${route.transferCount}회`
+                    : showRecent
+                    ? "최근 검색 경로"
+                    : "즐겨찾기 경로";
+
+                return (
+                  <div key={routeKey} className="flex min-h-[54px] w-full items-center gap-1 py-2">
+                    <button
+                      type="button"
+                      className="btn-press flex min-w-0 flex-1 items-center gap-3 text-left"
+                      onClick={() => setLocation(buildRouteResultPath(route.from, route.to, routeVia))}
+                    >
+                      <span
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                          showRecent ? "bg-[#EBF4FF]" : "bg-[#FFF7D9]"
+                        }`}
+                      >
+                        {showRecent ? (
+                          <Clock size={15} className="text-[#4A90D9]" />
+                        ) : (
+                          <Star size={15} className="text-[#C8A218]" fill="#C8A218" />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate text-[14px] font-bold text-[#1B2838]">
+                            {route.from}
+                          </span>
+                          <span className="text-[12px] font-medium text-[#A0A0A7]">→</span>
+                          {routeVia && (
+                            <>
+                              <span className="truncate text-[14px] font-bold text-[#1B2838]">
+                                {routeVia}
+                              </span>
+                              <span className="text-[12px] font-medium text-[#A0A0A7]">→</span>
+                            </>
+                          )}
+                          <span className="truncate text-[14px] font-bold text-[#1B2838]">
+                            {route.to}
+                          </span>
+                        </span>
+                        <span className="mt-0.5 block truncate text-[11px] font-medium text-[#8E8E93]">
+                          {routeMeta}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1">
+                        <span className="rounded-full bg-[#F5F5F7] px-2.5 py-1 text-[12px] font-bold text-[#607083]">
+                          {route.time || "보기"}
+                        </span>
+                        <ChevronRight size={14} className="text-[#C7C7CC]" />
+                      </span>
+                    </button>
+                    {isFavoriteItem && (
+                      <button
+                        type="button"
+                        aria-label={`${route.from}에서 ${route.to} 즐겨찾기 삭제`}
+                        onClick={() => {
+                          removeFavoriteRoute(route.id);
+                          setFavoriteRoutes(getFavoriteRoutes());
+                        }}
+                        className="btn-press flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F5F5F7]"
+                      >
+                        <Trash2 size={13} className="text-[#A0A0A7]" />
+                      </button>
+                    )}
+                  </div>
+                );
+              }))}
+          </div>
         </div>
       </motion.div>
     </div>

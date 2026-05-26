@@ -1,11 +1,12 @@
 /**
- * 환승 안내 미니 시트 — 다음 ride 화면 위에 떠 있는 슬림한 sticky 카드.
- * 자동 선택된 열차 + 도착 ETA + "자세히 보기" 버튼 (picker 펼치기).
- * swipe down으로 dismiss (즉시 다음 ride로 진행).
+ * 탑승 안내 미니 시트 — 현재 ride 화면 위에 떠 있는 슬림한 bottom sheet.
+ * 환승 중에는 자동 선택된 열차를, 일반 탑승 중에는 선택한 열차 요약을 표시한다.
+ * 상단 진행 레일을 탭하거나 위로 끌면 시트가 확장되면서 열차 선택 picker가 나타난다.
  */
-import { motion } from "framer-motion";
+import { motion, AnimatePresence, useDragControls } from "framer-motion";
 import type { PanInfo } from "framer-motion";
-import { ChevronUp, Clock, Train } from "lucide-react";
+import { useRef } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 export interface TransferSegmentData {
   type: "transfer";
@@ -15,102 +16,121 @@ export interface TransferSegmentData {
   toLineName: string;
   toDirection: string;
   walkMinutes: number;
+  walkSeconds?: number;
+  walkDistanceMeters?: number;
   fastCar: number;
   fastDoor: number;
 }
 
 const TAB_BAR_HEIGHT = 52;
-const DISMISS_THRESHOLD_PX = 60;
-const DISMISS_VELOCITY = 400;
+const EXPAND_THRESHOLD_PX = -34;
+const EXPAND_VELOCITY = -360;
+const DISMISS_THRESHOLD_PX = 80;
+const DISMISS_VELOCITY = 500;
 
 export default function TransferMiniSheet({
-  boardingStationName,
-  selectedTrainNo,
-  etaMinutes,
-  isSimulated,
-  toLineColor,
-  onShowDetails,
+  topSlot,
+  expanded,
+  onToggleExpand,
   onDismiss,
+  detailsSlot,
+  children,
 }: {
-  boardingStationName: string;
-  selectedTrainNo: string | null;
-  etaMinutes: number | null;
-  isSimulated: boolean;
-  toLineColor: string;
-  onShowDetails: () => void;
-  onDismiss: () => void;
+  topSlot?: ReactNode;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onDismiss?: () => void;
+  detailsSlot?: ReactNode;
+  children?: ReactNode;
 }) {
+  const dragControls = useDragControls();
+  const didDragRef = useRef(false);
+
+  const handleTopSlotClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
+
+    const target = event.target as HTMLElement;
+    if (target.closest("button")) return;
+    onToggleExpand();
+  };
+
   const handleDragEnd = (_: unknown, info: PanInfo) => {
+    window.setTimeout(() => {
+      didDragRef.current = false;
+    }, 0);
+
+    if (!expanded && (info.offset.y < EXPAND_THRESHOLD_PX || info.velocity.y < EXPAND_VELOCITY)) {
+      onToggleExpand();
+      return;
+    }
+
     if (info.offset.y > DISMISS_THRESHOLD_PX || info.velocity.y > DISMISS_VELOCITY) {
-      onDismiss();
+      if (expanded) {
+        onToggleExpand();
+      } else if (onDismiss) {
+        onDismiss();
+      }
     }
   };
 
-  const etaLabel =
-    etaMinutes === null
-      ? "도착 시간 확인 중"
-      : etaMinutes <= 0
-      ? "곧 도착"
-      : `약 ${etaMinutes}분 후 도착`;
+  // iOS smooth easing — 펼침/접힘 시 부드러운 감속
+  const smoothEase = [0.32, 0.72, 0, 1] as const;
 
   return (
     <motion.div
-      initial={{ y: 200, opacity: 0 }}
+      initial={{ y: 280, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      exit={{ y: 200, opacity: 0 }}
-      transition={{ duration: 0.32, ease: [0.23, 1, 0.32, 1] }}
+      exit={{ y: 280, opacity: 0 }}
+      transition={{
+        y: { duration: 0.46, ease: smoothEase },
+        opacity: { duration: 0.28, ease: "easeOut" },
+      }}
       drag="y"
+      dragControls={dragControls}
+      dragListener={false}
       dragConstraints={{ top: 0, bottom: 0 }}
-      dragElastic={{ top: 0, bottom: 0.65 }}
+      dragElastic={{ top: 0.45, bottom: 0.65 }}
+      onDragStart={() => {
+        didDragRef.current = true;
+      }}
       onDragEnd={handleDragEnd}
-      className="fixed left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50 bg-white rounded-t-2xl shadow-[0_-6px_28px_rgba(0,0,0,0.14)] touch-pan-y select-none"
+      className="fixed left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50 bg-white rounded-t-2xl shadow-[0_-6px_28px_rgba(0,0,0,0.14)] select-none overflow-hidden"
       style={{
         bottom: `calc(${TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
       }}
-      aria-label="환승 자동 선택 안내. 아래로 스와이프하면 닫습니다."
+      aria-label="탑승 안내 하단 패널"
     >
-      <div className="sheet-handle" />
-      <div className="px-4 pb-3 pt-1">
-        <div className="flex items-center gap-2 mb-1.5">
-          <span
-            className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white"
-            style={{ backgroundColor: toLineColor }}
-          >
-            자동 선택
-          </span>
-          {isSimulated && (
-            <span className="rounded bg-[#FFE9C7] px-1.5 py-0.5 text-[9px] font-bold uppercase text-[#C97A1B]">
-              시뮬
-            </span>
-          )}
+      {topSlot && (
+        <div
+          className="cursor-grab bg-[#F8F9FB] active:cursor-grabbing"
+          onPointerDown={(e) => dragControls.start(e)}
+          onClick={handleTopSlotClick}
+        >
+          {topSlot}
         </div>
+      )}
 
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <Train size={14} className="shrink-0" style={{ color: toLineColor }} />
-              <span className="truncate text-[15px] font-bold text-[#1B2838]">
-                {selectedTrainNo ? `${selectedTrainNo}${isSimulated ? "" : "호"}` : "선택 중..."}
-              </span>
-            </div>
-            <div className="mt-1 flex items-center gap-1 text-[12px] text-[#8E8E93]">
-              <Clock size={11} className="shrink-0" />
-              <span className="truncate">
-                {boardingStationName} <span className="font-semibold text-[#1B2838]">{etaLabel}</span>
-              </span>
-            </div>
-          </div>
-
-          <button
-            onClick={onShowDetails}
-            className="btn-press shrink-0 flex items-center gap-1 rounded-full px-3 py-2 text-[12px] font-semibold text-white"
-            style={{ backgroundColor: toLineColor }}
+      <AnimatePresence initial={false}>
+        {expanded && (detailsSlot || children) && (
+          <motion.div
+            key="expanded-area"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{
+              height: { duration: 0.42, ease: smoothEase },
+              opacity: { duration: 0.22, ease: "easeOut", delay: 0.05 },
+            }}
+            className="overflow-hidden border-t border-[#F0F0F2]"
           >
-            자세히 보기
-            <ChevronUp size={13} />
-          </button>
-        </div>
-      </div>
+            {detailsSlot}
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

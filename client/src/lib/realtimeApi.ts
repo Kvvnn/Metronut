@@ -118,8 +118,9 @@ export async function getTrainPositions(
   errorMessage?: string;
 }> {
   try {
+    const apiLineName = lineName.startsWith("2호선") ? "2호선" : lineName;
     const url = `/api/trpc/metro.getTrainPositions?batch=1&input=${encodeURIComponent(
-      JSON.stringify({ "0": { json: { lineName } } }),
+      JSON.stringify({ "0": { json: { lineName: apiLineName } } }),
     )}`;
     const response = await fetch(url, { credentials: "include" });
     if (!response.ok) {

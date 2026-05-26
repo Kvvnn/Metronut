@@ -8,11 +8,19 @@
  */
 import { useState, useEffect } from "react";
 import { useLocation, useSearch, useParams } from "wouter";
-import { ArrowLeft, Play, Clock, Train, Footprints, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, Play, Clock, Train, Footprints, ChevronDown, ChevronUp, Star } from "lucide-react";
 import { motion } from "framer-motion";
-import { findRoutes, findRoutesVia, calculateArrivalTime, getLineInfo } from "@/lib/pathfinder";
+import {
+  findRoutes,
+  findRoutesVia,
+  calculateArrivalTime,
+  getLineInfo,
+  formatTransferDuration,
+  isLongTransferSegment,
+} from "@/lib/pathfinder";
 import type { Route, RouteSegment } from "@/lib/pathfinder";
 import { toast } from "sonner";
+import { isFavoriteRoute, toggleFavoriteRoute } from "@/lib/routeFavorites";
 
 export default function RouteDetail() {
   const [, setLocation] = useLocation();
@@ -25,6 +33,7 @@ export default function RouteDetail() {
   
   const [route, setRoute] = useState<Route | null>(null);
   const [expandedSegments, setExpandedSegments] = useState<Set<number>>(new Set());
+  const [isFavorite, setIsFavorite] = useState(false);
 
   useEffect(() => {
     if (from && to) {
@@ -34,6 +43,10 @@ export default function RouteDetail() {
       }
     }
   }, [from, via, to, routeIdx]);
+
+  useEffect(() => {
+    setIsFavorite(isFavoriteRoute(from, to, via));
+  }, [from, to, via]);
 
   const toggleSegment = (idx: number) => {
     const next = new Set(expandedSegments);
@@ -51,9 +64,20 @@ export default function RouteDetail() {
   }
 
   const arrivalTime = calculateArrivalTime(route.totalTime);
+  const handleToggleFavorite = () => {
+    const nextFavorite = toggleFavoriteRoute({
+      from,
+      to,
+      via: via || undefined,
+      time: `${route.totalTime}분`,
+      transferCount: route.transferCount,
+    });
+    setIsFavorite(nextFavorite);
+    toast(nextFavorite ? "즐겨찾기에 추가했습니다" : "즐겨찾기에서 삭제했습니다");
+  };
 
   return (
-    <div className="min-h-screen bg-background pb-[calc(148px+env(safe-area-inset-bottom,0px))]">
+    <div className="min-h-screen bg-background pb-[calc(224px+env(safe-area-inset-bottom,0px))]">
       {/* Header */}
       <div className="safe-top nav-bar sticky top-0 z-40">
         <div className="flex items-center px-4 py-3 gap-3">
@@ -63,7 +87,18 @@ export default function RouteDetail() {
           <div className="flex-1 text-center">
             <span className="text-[15px] font-semibold text-[#1B2838]">경로 상세</span>
           </div>
-          <div className="w-8" />
+          <button
+            type="button"
+            onClick={handleToggleFavorite}
+            className="btn-press flex h-8 w-8 items-center justify-center rounded-full bg-[#F5F5F7]"
+            aria-label={isFavorite ? "즐겨찾기 삭제" : "즐겨찾기 추가"}
+          >
+            <Star
+              size={18}
+              className={isFavorite ? "text-[#C8A218]" : "text-[#8E8E93]"}
+              fill={isFavorite ? "#C8A218" : "transparent"}
+            />
+          </button>
         </div>
       </div>
 
@@ -116,11 +151,14 @@ export default function RouteDetail() {
         })}
       </div>
 
-      {/* Start Riding Button */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50">
+      {/* Start Riding Button — TabBar 위에 떠 있음 */}
+      <div
+        className="pointer-events-none fixed inset-x-0 z-40"
+        style={{ bottom: `calc(76px + env(safe-area-inset-bottom, 0px))` }}
+      >
         <div className="mx-auto w-full max-w-[480px]">
           <div className="h-8 bg-gradient-to-t from-background to-transparent" />
-          <div className="bg-background px-4 pb-[calc(16px+env(safe-area-inset-bottom,0px))] pt-2">
+          <div className="bg-background px-4 pb-3 pt-2">
             <button
               onClick={() => {
                 // 전체 여정(모든 segments)을 직렬화해서 저장. ride/transfer 모두 포함.
@@ -146,6 +184,8 @@ export default function RouteDetail() {
                       toLineName: toLine?.name || seg.lineName,
                       toDirection: nextRide ? `${nextRide.toStation.name} 방면` : "",
                       walkMinutes: seg.time,
+                      walkSeconds: seg.transferSeconds,
+                      walkDistanceMeters: seg.transferDistanceMeters,
                       fastCar: (hash % 8) + 1,
                       fastDoor: (hash % 4) + 1,
                     };
@@ -154,7 +194,9 @@ export default function RouteDetail() {
                     type: "ride" as const,
                     lineId: seg.lineId,
                     lineName: getLineInfo(seg.lineId)?.name || seg.lineName,
-                    direction: `${seg.toStation.name} 방면`,
+                    direction: seg.pattern?.label ?? `${seg.toStation.name} 방면`,
+                    patternLabel: seg.pattern?.label,
+                    patternTerminus: seg.pattern?.terminus,
                     fromStationName: seg.fromStation.name,
                     toStationName: seg.toStation.name,
                     stationNames: seg.stations.map(s => s.name),
@@ -167,7 +209,6 @@ export default function RouteDetail() {
                     route.segments[route.segments.length - 1]?.toStation.name || "",
                 };
                 sessionStorage.setItem("riding_route", JSON.stringify(payload));
-                toast("탑승 안내를 시작합니다");
                 setLocation("/riding");
               }}
               className="pointer-events-auto flex w-full items-center justify-center gap-2 rounded-2xl bg-[#1B2838] py-4 text-[16px] font-semibold text-white shadow-lg btn-press"
@@ -227,6 +268,9 @@ function RideSegment({
           />
         </div>
         <div className="min-w-0 pb-6">
+          {isFirst && (
+            <p className="mb-0.5 text-[13px] leading-5 text-[#8E8E93]">승차</p>
+          )}
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-[22px] font-bold leading-8 text-[#1B2838]">
               {segment.fromStation.name}
@@ -238,8 +282,14 @@ function RideSegment({
               {line?.shortName || segment.lineId}
             </span>
           </div>
-          {isFirst && (
-            <p className="mt-1.5 text-[13px] leading-5 text-[#8E8E93]">승차</p>
+          {segment.pattern && (
+            <p className="mt-1 flex items-center gap-1.5 text-[13px] font-semibold text-[#1B2838]">
+              <span
+                className="inline-block h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: segmentColor }}
+              />
+              {segment.pattern.label} 열차 탑승
+            </p>
           )}
         </div>
       </div>
@@ -304,14 +354,14 @@ function RideSegment({
           />
         </div>
         <div className="min-w-0 pb-6">
+          {isLast && (
+            <p className="mb-0.5 text-[13px] leading-5 text-[#8E8E93]">하차</p>
+          )}
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-[22px] font-bold leading-8 text-[#1B2838]">
               {segment.toStation.name}
             </span>
           </div>
-          {isLast && (
-            <p className="mt-1.5 text-[13px] leading-5 text-[#8E8E93]">하차</p>
-          )}
         </div>
       </div>
     </motion.div>
@@ -320,6 +370,10 @@ function RideSegment({
 
 function TransferSegment({ segment }: { segment: RouteSegment }) {
   const toLine = getLineInfo(segment.lineId);
+  const isLongTransfer = isLongTransferSegment(segment);
+  const distanceLabel = segment.transferDistanceMeters
+    ? ` · ${segment.transferDistanceMeters}m`
+    : "";
   // 빠른 환승 칸 번호 (역 이름 기반 결정적 생성)
   const hash = (segment.fromStation?.name || "x").charCodeAt(0) + (segment.toStation?.name || "y").charCodeAt(0);
   const fastCar = (hash % 8) + 1;
@@ -342,9 +396,14 @@ function TransferSegment({ segment }: { segment: RouteSegment }) {
           >
             {toLine?.shortName || segment.lineId}
           </span>
+          {isLongTransfer && (
+            <span className="rounded-full bg-[#FFE7D7] px-2 py-0.5 text-[10px] font-semibold text-[#C15B1B]">
+              긴 환승
+            </span>
+          )}
         </div>
         <p className="mt-1 text-[12px] leading-5 text-[#8E8E93]">
-          도보 약 {segment.time}분 · 빠른 환승 {fastCar}-{fastDoor}번 칸
+          환승 동선 {formatTransferDuration(segment)}{distanceLabel} · 빠른 환승 {fastCar}-{fastDoor}번 칸
         </p>
       </div>
     </div>

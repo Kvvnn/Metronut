@@ -8,7 +8,13 @@ import { useState, useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
 import { ArrowLeft, Clock, Repeat, Footprints, ChevronRight, Zap, Heart, Minus } from "lucide-react";
 import { motion } from "framer-motion";
-import { findRoutes, findRoutesVia, calculateArrivalTime, getLineInfo } from "@/lib/pathfinder";
+import {
+  findRoutes,
+  findRoutesVia,
+  calculateArrivalTime,
+  getLineInfo,
+  isLongTransferSegment,
+} from "@/lib/pathfinder";
 import type { Route } from "@/lib/pathfinder";
 
 const routeLabels = [
@@ -23,8 +29,22 @@ export default function RouteResult() {
   const from = searchParams.get("from") || "";
   const via = searchParams.get("via") || "";
   const to = searchParams.get("to") || "";
+  const origin = searchParams.get("origin") || "";
   const [routes, setRoutes] = useState<Route[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const buildMapPath = () => {
+    const params = new URLSearchParams();
+    if (from) params.set("from", from);
+    if (via) params.set("via", via);
+    if (to) params.set("to", to);
+    const query = params.toString();
+    return query ? `/?${query}` : "/";
+  };
+
+  const handleBack = () => {
+    setLocation(buildMapPath());
+  };
 
   useEffect(() => {
     if (from && to) {
@@ -39,11 +59,15 @@ export default function RouteResult() {
   }, [from, via, to]);
 
   return (
-    <div className="min-h-screen bg-background pb-6">
+    <div className="min-h-screen bg-background pb-[calc(72px+env(safe-area-inset-bottom,0px))]">
       {/* Header */}
       <div className="safe-top nav-bar sticky top-0 z-40">
         <div className="flex items-center px-4 py-3 gap-3">
-          <button onClick={() => setLocation("/search")} className="btn-press p-1">
+          <button
+            onClick={handleBack}
+            className="btn-press p-1"
+            aria-label="노선도로 돌아가기"
+          >
             <ArrowLeft size={22} className="text-[#1B2838]" />
           </button>
           <div className="flex-1 text-center">
@@ -71,6 +95,9 @@ export default function RouteResult() {
             const label = routeLabels[idx] || routeLabels[0];
             const Icon = label.icon;
             const arrivalTime = calculateArrivalTime(route.totalTime);
+            const longTransferCount = route.segments
+              .filter(segment => segment.isTransfer && isLongTransferSegment(segment))
+              .length;
 
             return (
               <motion.div
@@ -84,6 +111,7 @@ export default function RouteResult() {
                   onClick={() => {
                     const params = new URLSearchParams({ from, to });
                     if (via) params.set("via", via);
+                    if (origin) params.set("origin", origin);
                     setLocation(`/route-detail/${idx}?${params.toString()}`);
                   }}
                 >
@@ -105,30 +133,51 @@ export default function RouteResult() {
                     </span>
                   </div>
 
-                  {/* Line indicators */}
-                  <div className="flex items-center gap-1 mb-3">
-                    {route.segments
-                      .filter(s => !s.isTransfer)
-                      .map((seg, segIdx) => {
-                        const line = getLineInfo(seg.lineId);
-                        return (
-                          <div key={segIdx} className="flex items-center gap-1">
-                            {segIdx > 0 && (
-                              <div className="w-4 h-[2px] bg-[#E0E0E0] rounded" />
-                            )}
-                            <span
-                              className="line-badge text-[11px]"
-                              style={{ backgroundColor: line?.color || seg.lineColor }}
-                            >
-                              {line?.shortName || seg.lineId}
+                  {/* Line indicators + 행선지 */}
+                  <div className="space-y-1 mb-3">
+                    <div className="flex items-center gap-1">
+                      {route.segments
+                        .filter(s => !s.isTransfer)
+                        .map((seg, segIdx) => {
+                          const line = getLineInfo(seg.lineId);
+                          return (
+                            <div key={segIdx} className="flex items-center gap-1">
+                              {segIdx > 0 && (
+                                <div className="w-4 h-[2px] bg-[#E0E0E0] rounded" />
+                              )}
+                              <span
+                                className="line-badge text-[11px]"
+                                style={{ backgroundColor: line?.color || seg.lineColor }}
+                              >
+                                {line?.shortName || seg.lineId}
+                              </span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[#1B2838]">
+                      {route.segments
+                        .filter(s => !s.isTransfer && s.pattern)
+                        .map((seg, segIdx, arr) => {
+                          const line = getLineInfo(seg.lineId);
+                          return (
+                            <span key={segIdx} className="flex items-center gap-1">
+                              <span
+                                className="inline-block h-1.5 w-1.5 rounded-full"
+                                style={{ backgroundColor: line?.color || seg.lineColor }}
+                              />
+                              <span className="font-semibold">{seg.pattern!.label}</span>
+                              {segIdx < arr.length - 1 && (
+                                <span className="text-[#C7C7CC]">·</span>
+                              )}
                             </span>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                    </div>
                   </div>
 
                   {/* Info row */}
-                  <div className="flex items-center gap-4 text-[13px] text-[#8E8E93]">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-[#8E8E93]">
                     <span className="flex items-center gap-1">
                       <Repeat size={12} />
                       환승 {route.transferCount}회
@@ -139,8 +188,13 @@ export default function RouteResult() {
                     </span>
                     <span className="flex items-center gap-1">
                       <Footprints size={12} />
-                      도보 {route.walkTime}분
+                      환승 이동 {route.walkTime}분
                     </span>
+                    {longTransferCount > 0 && (
+                      <span className="rounded-full bg-[#FFF1E7] px-2 py-0.5 text-[12px] font-semibold text-[#C15B1B]">
+                        긴 환승 {longTransferCount}개
+                      </span>
+                    )}
                     <span className="ml-auto font-medium text-[#1B2838]">
                       ₩{route.fare.toLocaleString()}
                     </span>
