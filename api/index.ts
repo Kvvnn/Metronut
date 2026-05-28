@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
-import { createApiApp } from "../server/_core/app";
+// @ts-ignore - bundled at build time by esbuild (see package.json "build")
+import { createApiApp } from "./_app.mjs";
 
 const app = createApiApp();
 
