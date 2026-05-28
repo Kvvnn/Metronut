@@ -68,6 +68,49 @@ function parseApiError(data: any, fallbackMessage: string) {
   };
 }
 
+type MetroTrainPosition = {
+  trainNo: string;
+  stationName: string;
+  updnLine: string;
+  trainStatus: string;
+  destination: string;
+  receivedAt: string;
+};
+
+function getReceivedAtTime(value: string) {
+  const timestamp = Date.parse(value.replace(" ", "T"));
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function preferNewerTrainPosition(current: MetroTrainPosition, next: MetroTrainPosition) {
+  const currentTime = getReceivedAtTime(current.receivedAt);
+  const nextTime = getReceivedAtTime(next.receivedAt);
+  if (nextTime !== currentTime) return nextTime > currentTime ? next : current;
+  if (!current.stationName && next.stationName) return next;
+  if (!current.destination && next.destination) return next;
+  return current;
+}
+
+function dedupeTrainPositions(positions: MetroTrainPosition[]) {
+  const byTrainNo = new Map<string, MetroTrainPosition>();
+  const withoutTrainNo: MetroTrainPosition[] = [];
+
+  positions.forEach(position => {
+    if (!position.trainNo) {
+      withoutTrainNo.push(position);
+      return;
+    }
+
+    const current = byTrainNo.get(position.trainNo);
+    byTrainNo.set(
+      position.trainNo,
+      current ? preferNewerTrainPosition(current, position) : position,
+    );
+  });
+
+  return Array.from(byTrainNo.values()).concat(withoutTrainNo);
+}
+
 export const metroRouter = router({
   /**
    * 실시간 도착 정보 조회
@@ -175,14 +218,16 @@ export const metroRouter = router({
           };
         }
 
-        const positions = list.map((item: any) => ({
-          trainNo: String(item.trainNo ?? ""),
-          stationName: String(item.statnNm ?? ""),
-          updnLine: String(item.updnLine ?? ""), // 0=상행/내선, 1=하행/외선
-          trainStatus: String(item.trainSttus ?? ""), // 0=진입, 1=도착, 2=출발
-          destination: String(item.statnTnm ?? ""),
-          receivedAt: String(item.recptnDt ?? ""),
-        }));
+        const positions = dedupeTrainPositions(
+          list.map((item: any) => ({
+            trainNo: String(item.trainNo ?? ""),
+            stationName: String(item.statnNm ?? ""),
+            updnLine: String(item.updnLine ?? ""), // 0=상행/내선, 1=하행/외선
+            trainStatus: String(item.trainSttus ?? ""), // 0=진입, 1=도착, 2=출발
+            destination: String(item.statnTnm ?? ""),
+            receivedAt: String(item.recptnDt ?? ""),
+          })),
+        );
         return { positions, isSimulated: false };
       } catch {
         return {

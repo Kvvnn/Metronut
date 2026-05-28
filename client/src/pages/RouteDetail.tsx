@@ -6,7 +6,7 @@
  * - 빠른 환승 칸 번호
  * - 도착 예상시간
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation, useSearch, useParams } from "wouter";
 import { ArrowLeft, Play, Clock, Train, Footprints, ChevronDown, ChevronUp, Star } from "lucide-react";
 import { motion } from "framer-motion";
@@ -19,8 +19,64 @@ import {
   isLongTransferSegment,
 } from "@/lib/pathfinder";
 import type { Route, RouteSegment } from "@/lib/pathfinder";
+import { OFFICIAL_FAST_TRANSFERS } from "@/data/officialFastTransfers";
+import {
+  findFastTransferInfo,
+  formatFastTransferInfo,
+  type FastTransferInfo,
+  type FastTransferLookupInput,
+} from "@shared/fastTransfer";
 import { toast } from "sonner";
 import { isFavoriteRoute, toggleFavoriteRoute } from "@/lib/routeFavorites";
+
+function getRideDirection(segment: RouteSegment | undefined) {
+  if (!segment || segment.isTransfer) return undefined;
+  return segment.pattern?.label ?? `${segment.toStation.name} 방면`;
+}
+
+function uniqueNames(names: Array<string | undefined>) {
+  return Array.from(new Set(names.filter((name): name is string => Boolean(name))));
+}
+
+function getRideDirectionNames(segment: RouteSegment | undefined) {
+  if (!segment || segment.isTransfer) return [];
+
+  return uniqueNames([
+    segment.pattern?.terminus,
+    segment.pattern?.label,
+    segment.toStation.name,
+    ...segment.stations.map(station => station.name),
+  ]);
+}
+
+function getTransferLookupInput(
+  route: Route,
+  transferIndex: number,
+): FastTransferLookupInput | null {
+  const segment = route.segments[transferIndex];
+  if (!segment?.isTransfer) return null;
+
+  const prevRide = route.segments
+    .slice(0, transferIndex)
+    .reverse()
+    .find(s => !s.isTransfer);
+  const nextRide = route.segments
+    .slice(transferIndex + 1)
+    .find(s => !s.isTransfer);
+
+  if (!prevRide || !nextRide) return null;
+
+  return {
+    stationName: segment.fromStation.name,
+    fromLineId: prevRide.lineId,
+    toLineId: nextRide.lineId,
+    fromDirection: getRideDirection(prevRide),
+    toDirection: getRideDirection(nextRide),
+    fromDirectionNames: getRideDirectionNames(prevRide),
+    toDirectionNames: getRideDirectionNames(nextRide),
+    nextStationName: nextRide.stations[1]?.name,
+  };
+}
 
 export default function RouteDetail() {
   const [, setLocation] = useLocation();
@@ -47,6 +103,22 @@ export default function RouteDetail() {
   useEffect(() => {
     setIsFavorite(isFavoriteRoute(from, to, via));
   }, [from, to, via]);
+
+  const fastTransfers = useMemo<Record<number, FastTransferInfo | null>>(() => {
+    if (!route) return {};
+
+    return Object.fromEntries(
+      route.segments
+        .map((segment, index) => {
+          const input = segment.isTransfer ? getTransferLookupInput(route, index) : null;
+          if (!input) return null;
+          return [index, findFastTransferInfo(OFFICIAL_FAST_TRANSFERS, input)] as const;
+        })
+        .filter((entry): entry is readonly [number, FastTransferInfo | null] =>
+          Boolean(entry),
+        ),
+    );
+  }, [route]);
 
   const toggleSegment = (idx: number) => {
     const next = new Set(expandedSegments);
@@ -135,7 +207,11 @@ export default function RouteDetail() {
         {route.segments.map((segment, idx) => {
           if (segment.isTransfer) {
             return (
-              <TransferSegment key={idx} segment={segment} />
+              <TransferSegment
+                key={idx}
+                segment={segment}
+                fastTransfer={fastTransfers[idx]}
+              />
             );
           }
           return (
@@ -172,10 +248,6 @@ export default function RouteDetail() {
                       .slice(i + 1)
                       .find(s => !s.isTransfer);
                     const toLine = getLineInfo(seg.lineId);
-                    // RouteDetail에서 보여주던 결정적 해시와 동일하게 빠른환승 계산
-                    const hash =
-                      (seg.fromStation?.name || "x").charCodeAt(0) +
-                      (seg.toStation?.name || "y").charCodeAt(0);
                     return {
                       type: "transfer" as const,
                       stationName: seg.fromStation.name,
@@ -186,8 +258,7 @@ export default function RouteDetail() {
                       walkMinutes: seg.time,
                       walkSeconds: seg.transferSeconds,
                       walkDistanceMeters: seg.transferDistanceMeters,
-                      fastCar: (hash % 8) + 1,
-                      fastDoor: (hash % 4) + 1,
+                      fastTransfer: fastTransfers[i],
                     };
                   }
                   return {
@@ -368,16 +439,21 @@ function RideSegment({
   );
 }
 
-function TransferSegment({ segment }: { segment: RouteSegment }) {
+function TransferSegment({
+  segment,
+  fastTransfer,
+}: {
+  segment: RouteSegment;
+  fastTransfer?: FastTransferInfo | null;
+}) {
   const toLine = getLineInfo(segment.lineId);
   const isLongTransfer = isLongTransferSegment(segment);
   const distanceLabel = segment.transferDistanceMeters
     ? ` · ${segment.transferDistanceMeters}m`
     : "";
-  // 빠른 환승 칸 번호 (역 이름 기반 결정적 생성)
-  const hash = (segment.fromStation?.name || "x").charCodeAt(0) + (segment.toStation?.name || "y").charCodeAt(0);
-  const fastCar = (hash % 8) + 1;
-  const fastDoor = (hash % 4) + 1;
+  const fastTransferLabel = fastTransfer
+    ? `빠른 환승 ${formatFastTransferInfo(fastTransfer)}`
+    : "빠른 환승 정보 없음";
 
   return (
     <div
@@ -403,7 +479,7 @@ function TransferSegment({ segment }: { segment: RouteSegment }) {
           )}
         </div>
         <p className="mt-1 text-[12px] leading-5 text-[#8E8E93]">
-          환승 동선 {formatTransferDuration(segment)}{distanceLabel} · 빠른 환승 {fastCar}-{fastDoor}번 칸
+          환승 동선 {formatTransferDuration(segment)}{distanceLabel} · {fastTransferLabel}
         </p>
       </div>
     </div>

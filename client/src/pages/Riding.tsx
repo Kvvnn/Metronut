@@ -16,11 +16,19 @@ import {
   ArrowLeft, RefreshCw, Train,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { getLineInfo, getStationInfo, getStationsByLine } from "@/lib/pathfinder";
+import { toast } from "sonner";
+import {
+  getLineInfo,
+  getPracticalTransferSeconds,
+  getStationInfo,
+  getStationsByLine,
+} from "@/lib/pathfinder";
+import type { Station } from "@/lib/pathfinder";
 import { getTrainPositions } from "@/lib/realtimeApi";
 import type { TrainPosition } from "@/lib/realtimeApi";
 import TransferMiniSheet from "@/components/TransferMiniSheet";
 import type { TransferSegmentData } from "@/components/TransferMiniSheet";
+import { formatFastTransferInfo } from "@shared/fastTransfer";
 
 interface RideSegmentData {
   type: "ride";
@@ -58,6 +66,19 @@ interface RidingPayload {
 interface EnrichedTrain extends TrainPosition {
   posIdxOriented: number;
   sameDirection: boolean | null;
+}
+
+type TrainInactiveLevel = "none" | "soft" | "deep";
+
+// 페이지 이탈(설정/노선 보기 등) 후 복귀 시 복원할 탑승 세션 상태.
+const RIDING_SESSION_KEY = "riding_session";
+interface RidingSessionState {
+  currentSegmentIdx: number;
+  selectedTrainNo: string | null;
+  selectedTrainSnapshot: EnrichedTrain | null;
+  currentIdx: number;
+  alarmEnabled: boolean;
+  alarmBefore: number;
 }
 
 // 가짜 열차 식별 prefix. 실데이터 API trainNo는 보통 4자리 숫자라 충돌 X.
@@ -122,6 +143,126 @@ function isSimTrainNo(trainNo: string | null | undefined): boolean {
   return !!trainNo && trainNo.startsWith(SIM_TRAIN_PREFIX);
 }
 
+function isCircularLineId(lineId: string | null | undefined) {
+  return lineId === "2";
+}
+
+function getForwardDistance(startIdx: number, endIdx: number, total: number) {
+  if (startIdx < 0 || endIdx < 0 || total <= 0) return Number.POSITIVE_INFINITY;
+  return (endIdx - startIdx + total) % total;
+}
+
+function isDeepInactiveTrain(
+  train: Pick<EnrichedTrain, "posIdxOriented" | "stationName">,
+  routeStationSet: Set<string>,
+  fromIdx: number,
+  toIdx: number,
+  totalStationCount: number,
+  isCircular: boolean,
+) {
+  if (train.posIdxOriented < 0) return false;
+  if (isCircular && fromIdx >= 0 && toIdx >= 0 && totalStationCount > 0) {
+    if (routeStationSet.has(train.stationName)) return false;
+    const routeDistance = getForwardDistance(fromIdx, toIdx, totalStationCount);
+    const distanceFromStart = getForwardDistance(fromIdx, train.posIdxOriented, totalStationCount);
+    const distanceToBoard = getForwardDistance(train.posIdxOriented, fromIdx, totalStationCount);
+    // 순환선에서는 선형 인덱스 뒤쪽 역이 "출발역 직전"일 수 있다.
+    // 출발역까지 남은 거리가 더 짧으면 탑승 후보(soft), 아니면 이미 도착역을 지난 후보(deep)로 본다.
+    if (distanceFromStart <= routeDistance) return false;
+    return distanceToBoard >= distanceFromStart;
+  }
+  const isPastDestination = toIdx >= 0 && train.posIdxOriented > toIdx;
+  const isOffRouteBranchStop =
+    fromIdx >= 0 && train.posIdxOriented >= fromIdx && !routeStationSet.has(train.stationName);
+  return isPastDestination || isOffRouteBranchStop;
+}
+
+function isBeforeBoardingStation(
+  train: Pick<EnrichedTrain, "posIdxOriented" | "stationName">,
+  routeStationSet: Set<string>,
+  fromIdx: number,
+  toIdx: number,
+  totalStationCount: number,
+  isCircular: boolean,
+) {
+  if (train.posIdxOriented < 0 || fromIdx < 0) return false;
+  if (!isCircular) return train.posIdxOriented < fromIdx;
+  if (routeStationSet.has(train.stationName)) return false;
+  const distanceFromStart = getForwardDistance(fromIdx, train.posIdxOriented, totalStationCount);
+  const distanceToBoard = getForwardDistance(train.posIdxOriented, fromIdx, totalStationCount);
+  const routeDistance = getForwardDistance(fromIdx, toIdx, totalStationCount);
+  return distanceFromStart > routeDistance && distanceToBoard < distanceFromStart;
+}
+
+type OrientedStations = {
+  stations: Station[];
+  fromIdx: number;
+  toIdx: number;
+  expectedUpdnLine: string | null;
+};
+
+// 노선 역들을 진행 방향 순서로 정렬하는 순수 함수.
+// 현재 ride(orientedLineStations)와 "다음 환승 노선" 위치 계산에 함께 쓴다.
+function orientRideStations(
+  lineId: string,
+  fromStationName: string,
+  toStationName: string,
+  stationNames: string[],
+): OrientedStations {
+  const lineStations = getStationsByLine(lineId);
+  const fromIdx = lineStations.findIndex(s => s.name === fromStationName);
+  const toIdx = lineStations.findIndex(s => s.name === toStationName);
+  if (fromIdx < 0) return { stations: lineStations, fromIdx, toIdx, expectedUpdnLine: null };
+
+  // 인접 두 역으로 방향 결정 (실패 시 from→to 폴백)
+  let isReversed: boolean | null = null;
+  if (stationNames.length >= 2) {
+    const a = lineStations.findIndex(s => s.name === stationNames[0]);
+    const b = lineStations.findIndex(s => s.name === stationNames[1]);
+    if (a >= 0 && b >= 0) isReversed = b < a;
+  }
+  if (isReversed === null && toIdx >= 0) isReversed = toIdx < fromIdx;
+  if (isReversed === null) return { stations: lineStations, fromIdx, toIdx, expectedUpdnLine: null };
+
+  const expectedUpdnLine = isReversed ? "0" : "1";
+  if (!isReversed) return { stations: lineStations, fromIdx, toIdx, expectedUpdnLine };
+  const reversed = [...lineStations].reverse();
+  return {
+    stations: reversed,
+    fromIdx: reversed.findIndex(s => s.name === fromStationName),
+    toIdx: toIdx >= 0 ? reversed.findIndex(s => s.name === toStationName) : -1,
+    expectedUpdnLine,
+  };
+}
+
+// API 위치 → 진행방향 인덱스가 붙은 EnrichedTrain.
+function enrichTrains(positions: TrainPosition[], oriented: OrientedStations): EnrichedTrain[] {
+  const stationIndex = new Map(oriented.stations.map((s, i) => [s.name, i]));
+  return positions.map(p => {
+    const posIdx = stationIndex.get(p.stationName) ?? -1;
+    const destIdx = stationIndex.get(p.destination) ?? -1;
+    const sameDirection = posIdx >= 0 && destIdx >= 0 ? destIdx > posIdx : null;
+    return { ...p, posIdxOriented: posIdx, sameDirection };
+  });
+}
+
+// 우리 진행 방향 열차만 남긴다 (선택된 열차는 무조건 통과).
+function filterSameDirectionTrains(
+  enriched: EnrichedTrain[],
+  oriented: OrientedStations,
+  selectedNo: string | null,
+): EnrichedTrain[] {
+  const { fromIdx, expectedUpdnLine } = oriented;
+  if (fromIdx < 0) return enriched;
+  return enriched.filter(t => {
+    if (selectedNo && t.trainNo === selectedNo) return true;
+    if (expectedUpdnLine && t.updnLine && t.updnLine !== expectedUpdnLine) return false;
+    if (t.sameDirection === true) return true;
+    if (t.sameDirection === null && expectedUpdnLine && t.updnLine === expectedUpdnLine) return true;
+    return false;
+  });
+}
+
 export default function Riding() {
   const [, setLocation] = useLocation();
 
@@ -135,7 +276,23 @@ export default function Riding() {
     }
   }, []);
 
-  const [currentSegmentIdx, setCurrentSegmentIdx] = useState(0);
+  // 페이지를 떠났다 돌아왔을 때 선택 상태를 복원한다.
+  // 같은 여정(riding_route)일 때만 복원해 새 경로에 옛 선택이 새는 것을 막는다.
+  const restoredSession = useMemo<RidingSessionState | null>(() => {
+    try {
+      const raw = sessionStorage.getItem(RIDING_SESSION_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { routeRaw?: string; state?: RidingSessionState };
+      if (parsed.routeRaw !== sessionStorage.getItem("riding_route")) return null;
+      return parsed.state ?? null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const [currentSegmentIdx, setCurrentSegmentIdx] = useState(
+    restoredSession?.currentSegmentIdx ?? 0,
+  );
   const currentSegment = route?.segments[currentSegmentIdx] ?? null;
   const totalSegments = route?.segments.length ?? 0;
   const isLastSegment = currentSegmentIdx >= totalSegments - 1;
@@ -193,29 +350,116 @@ export default function Riding() {
       return { name, isTransfer: transferLines.length > 0, transferLines };
     });
   }, [ridingData]);
+  const routeStationSet = useMemo(
+    () => new Set(ridingData?.stationNames ?? []),
+    [ridingData],
+  );
 
-  const [selectedTrainNo, setSelectedTrainNo] = useState<string | null>(null);
-  const [selectedTrainSnapshot, setSelectedTrainSnapshot] = useState<EnrichedTrain | null>(null);
+  const [selectedTrainNo, setSelectedTrainNo] = useState<string | null>(
+    restoredSession?.selectedTrainNo ?? null,
+  );
+  const [selectedTrainSnapshot, setSelectedTrainSnapshot] = useState<EnrichedTrain | null>(
+    restoredSession?.selectedTrainSnapshot ?? null,
+  );
   const [isTrainPickerExpanded, setIsTrainPickerExpanded] = useState(true);
-  const [currentIdx, setCurrentIdx] = useState(0);
+  const [currentIdx, setCurrentIdx] = useState(restoredSession?.currentIdx ?? 0);
   const [isSimulated, setIsSimulated] = useState(false);
-  const [alarmEnabled, setAlarmEnabled] = useState(true);
-  const [alarmBefore, setAlarmBefore] = useState(1);
+  const [alarmEnabled, setAlarmEnabled] = useState(restoredSession?.alarmEnabled ?? true);
+  const [alarmBefore, setAlarmBefore] = useState(restoredSession?.alarmBefore ?? 1);
   const [availableTrains, setAvailableTrains] = useState<EnrichedTrain[]>([]);
   const [loadingTrains, setLoadingTrains] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
   const [trainPositionError, setTrainPositionError] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
+  // 환승 전역 미리보기: 다음 노선 열차 + 미리 골라둔 열차.
+  const [nextLineTrains, setNextLineTrains] = useState<EnrichedTrain[]>([]);
+  const [pendingNextTrainNo, setPendingNextTrainNo] = useState<string | null>(null);
 
-  const trainNoRef = useRef<string | null>(null);
+  const trainNoRef = useRef<string | null>(restoredSession?.selectedTrainNo ?? null);
   const alarmFiredRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fromStationDomRef = useRef<HTMLDivElement>(null);
   const didInitialScrollRef = useRef(false);
+  // 표시 중인 ride segment 추적용. 첫 마운트(복원 직후)와 실제 segment 전환을 구분한다.
+  const prevDisplayedRideIdxRef = useRef<number | null>(null);
+  // 미리 골라둔 다음 열차. segment 리셋에도 살아남아 실제 환승 시 적용된다(상태는 UI용).
+  const pendingNextTrainNoRef = useRef<string | null>(null);
+  // 환승 전역 "환승역입니다" 알림을 환승당 1회만 울리기 위한 가드.
+  const preTransferAlertedRef = useRef(false);
 
   const line = getLineInfo(ridingData?.lineId || "");
   const lineColor = line?.color || "#00A84D";
   const destinationIdx = stations.length - 1;
+  const isCircularRide = isCircularLineId(ridingData?.lineId);
+
+  // ===== 다음 환승 노선 (현재 ride가 환승으로 끝날 때) =====
+  const nextRideIdx = useMemo(() => {
+    if (!route || currentSegment?.type !== "ride") return -1;
+    for (let i = currentSegmentIdx + 1; i < route.segments.length; i++) {
+      if (route.segments[i].type === "ride") return i;
+    }
+    return -1;
+  }, [route, currentSegment, currentSegmentIdx]);
+  const nextRideSegment =
+    nextRideIdx >= 0 && route?.segments[nextRideIdx]?.type === "ride"
+      ? (route.segments[nextRideIdx] as RideSegmentData)
+      : null;
+  const upcomingTransferSegment = useMemo<TransferSegmentData | null>(() => {
+    if (!route || currentSegment?.type !== "ride" || nextRideIdx < 0) return null;
+    const segment = route.segments
+      .slice(currentSegmentIdx + 1, nextRideIdx)
+      .find(segment => segment.type === "transfer");
+    return segment?.type === "transfer" ? segment : null;
+  }, [currentSegment, currentSegmentIdx, nextRideIdx, route]);
+  const activeTransferSegment =
+    currentSegment?.type === "transfer" ? currentSegment : upcomingTransferSegment;
+  const nextLineName = nextRideSegment?.lineName ?? null;
+  const nextOriented = useMemo<OrientedStations | null>(() => {
+    if (nextRideIdx < 0 || !route) return null;
+    const seg = route.segments[nextRideIdx];
+    if (seg.type !== "ride") return null;
+    return orientRideStations(seg.lineId, seg.fromStationName, seg.toStationName, seg.stationNames);
+  }, [nextRideIdx, route]);
+
+  // 환승 전역 윈도: 현재 ride가 환승으로 끝나고, 선택 열차가 종착(환승)역 직전 역에 도달.
+  const inPreTransferWindow =
+    currentSegment?.type === "ride" &&
+    (ridingData?.isTransferAtEnd ?? false) &&
+    nextRideIdx >= 0 &&
+    !!selectedTrainNo &&
+    destinationIdx > 0 &&
+    currentIdx >= destinationIdx - 1 &&
+    currentIdx < destinationIdx;
+  const fastTransferLabel =
+    (isTransferOverlay || inPreTransferWindow) && activeTransferSegment?.fastTransfer
+      ? formatFastTransferInfo(activeTransferSegment.fastTransfer)
+      : null;
+
+  // 다음 노선에서 환승역(보딩역)에 아직 탈 수 있는 열차 (미리선택 후보, 최대 6대).
+  const nextBoardable = useMemo<EnrichedTrain[]>(() => {
+    if (!nextOriented || nextOriented.fromIdx < 0 || nextRideIdx < 0 || !route) return [];
+    const seg = route.segments[nextRideIdx];
+    if (seg.type !== "ride") return [];
+    const boardIdx = nextOriented.fromIdx;
+    const total = nextOriented.stations.length;
+    const routeSet = new Set(seg.stationNames);
+    const circ = isCircularLineId(seg.lineId);
+    const candidates = nextLineTrains.filter(t => {
+      if (isDeepInactiveTrain(t, routeSet, boardIdx, nextOriented.toIdx, total, circ)) return false;
+      if (t.posIdxOriented < 0) return false;
+      if (circ) {
+        if (t.posIdxOriented === boardIdx) return t.trainStatus !== "2";
+        return isBeforeBoardingStation(t, routeSet, boardIdx, nextOriented.toIdx, total, true);
+      }
+      if (t.posIdxOriented < boardIdx) return true;
+      if (t.posIdxOriented === boardIdx) return t.trainStatus !== "2";
+      return false;
+    });
+    const distance = (t: EnrichedTrain) =>
+      circ ? getForwardDistance(t.posIdxOriented, boardIdx, total) : boardIdx - t.posIdxOriented;
+    return candidates.sort((a, b) => distance(a) - distance(b)).slice(0, 6);
+  }, [nextLineTrains, nextOriented, nextRideIdx, route]);
+
   const prefersReducedMotion = useReducedMotion();
   const slideTransition = {
     duration: prefersReducedMotion ? 0.01 : 0.26,
@@ -229,47 +473,16 @@ export default function Riding() {
   // 비교가 가장 정확함 (인접 역은 거의 항상 연속된 인덱스). fromIdx vs toIdx
   // 만 보면 노선이 길거나 순환선/지선 통합 때문에 위치가 비선형이라 잘못
   // 추론될 수 있음.
-  const orientedLineStations = useMemo(() => {
-    if (!ridingData)
-      return {
-        stations: [],
-        fromIdx: -1,
-        toIdx: -1,
-        expectedUpdnLine: null as string | null,
-      };
-    const lineStations = getStationsByLine(ridingData.lineId);
-    const fromIdx = lineStations.findIndex(s => s.name === ridingData.fromStationName);
-    const toIdx = lineStations.findIndex(s => s.name === ridingData.toStationName);
-    if (fromIdx < 0)
-      return { stations: lineStations, fromIdx, toIdx, expectedUpdnLine: null };
-
-    // 인접 두 역으로 방향 결정 (실패 시 from→to 폴백)
-    let isReversed: boolean | null = null;
-    if (ridingData.stationNames.length >= 2) {
-      const a = lineStations.findIndex(s => s.name === ridingData.stationNames[0]);
-      const b = lineStations.findIndex(s => s.name === ridingData.stationNames[1]);
-      if (a >= 0 && b >= 0) {
-        isReversed = b < a;
-      }
+  const orientedLineStations = useMemo<OrientedStations>(() => {
+    if (!ridingData) {
+      return { stations: [], fromIdx: -1, toIdx: -1, expectedUpdnLine: null };
     }
-    if (isReversed === null && toIdx >= 0) {
-      isReversed = toIdx < fromIdx;
-    }
-    if (isReversed === null) {
-      return { stations: lineStations, fromIdx, toIdx, expectedUpdnLine: null };
-    }
-
-    const expectedUpdnLine = isReversed ? "0" : "1";
-    if (!isReversed) {
-      return { stations: lineStations, fromIdx, toIdx, expectedUpdnLine };
-    }
-    const reversed = [...lineStations].reverse();
-    return {
-      stations: reversed,
-      fromIdx: reversed.findIndex(s => s.name === ridingData.fromStationName),
-      toIdx: toIdx >= 0 ? reversed.findIndex(s => s.name === ridingData.toStationName) : -1,
-      expectedUpdnLine,
-    };
+    return orientRideStations(
+      ridingData.lineId,
+      ridingData.fromStationName,
+      ridingData.toStationName,
+      ridingData.stationNames,
+    );
   }, [ridingData]);
 
   // ===== 위치 폴링 (15초마다) =====
@@ -292,7 +505,7 @@ export default function Riding() {
       setLoadingTrains(false);
       setHasFetched(true);
 
-      const { stations: lineStationsOriented, fromIdx, expectedUpdnLine } = orientedLineStations;
+      const { stations: lineStationsOriented, expectedUpdnLine } = orientedLineStations;
 
       if (sim) {
         setIsSimulated(true);
@@ -307,35 +520,16 @@ export default function Riding() {
       setIsSimulated(false);
       setTrainPositionError(null);
 
-      const stationIndex = new Map(lineStationsOriented.map((s, i) => [s.name, i]));
-
-      const enriched: EnrichedTrain[] = positions.map(p => {
-        const posIdx = stationIndex.get(p.stationName) ?? -1;
-        const destIdx = stationIndex.get(p.destination) ?? -1;
-        const sameDirection =
-          posIdx >= 0 && destIdx >= 0 ? destIdx > posIdx : null;
-        return { ...p, posIdxOriented: posIdx, sameDirection };
-      });
       // 방향 필터 (다층):
       //   0) 선택된 열차는 무조건 통과 (회차/destination 변경으로 필터에서
       //      빠지면 pin이 사라져 사용자가 deselect된 줄로 오해함)
-      //   1) sameDirection === true: destIdx > posIdx로 확정 → 통과
-      //   2) sameDirection === null: 목적지가 라인 데이터 밖
-      //      ("내선순환"/"외선순환", 지선 종착 등). updnLine이 우리 방향과
-      //      일치하면 통과 (2호선 순환선/지선 대응 폴백)
-      //   3) sameDirection === false: 반대 방향 → 제외
-      const selectedNo = trainNoRef.current;
-      const filtered =
-        fromIdx >= 0
-          ? enriched.filter(t => {
-              if (selectedNo && t.trainNo === selectedNo) return true;
-              if (t.sameDirection === true) return true;
-              if (t.sameDirection === null && expectedUpdnLine && t.updnLine === expectedUpdnLine) {
-                return true;
-              }
-              return false;
-            })
-          : enriched;
+      //   1) API updnLine이 있으면 우선 매칭한다. 1호선처럼 분기/종착이 많은
+      //      노선에서 목적지 인덱스만 보면 반대 방향이 섞일 수 있다.
+      //   2) sameDirection === true: destIdx > posIdx로 확정 → 통과
+      //   3) sameDirection === null: 목적지가 라인 데이터 밖 → updnLine 매칭 신뢰.
+      //   4) sameDirection === false: 반대 방향 → 제외
+      const enriched = enrichTrains(positions, orientedLineStations);
+      const filtered = filterSameDirectionTrains(enriched, orientedLineStations, trainNoRef.current);
       setAvailableTrains(filtered);
       return null;
     };
@@ -353,6 +547,49 @@ export default function Riding() {
 
   const refreshPositions = useCallback(() => setRefreshTick(t => t + 1), []);
 
+  // ===== 환승 전역 윈도: 다음 노선 열차 위치 폴링 (미리선택용) =====
+  useEffect(() => {
+    if (!inPreTransferWindow || !nextOriented || nextRideIdx < 0 || !route) return;
+    const seg = route.segments[nextRideIdx];
+    if (seg.type !== "ride") return;
+    let cancelled = false;
+    let interval: number | undefined;
+    const poll = async () => {
+      const { positions, isSimulated: sim } = await getTrainPositions(seg.lineName);
+      if (cancelled) return;
+      if (sim) {
+        setNextLineTrains(
+          generateFakeTrains(nextOriented.stations, nextOriented.expectedUpdnLine ?? "1"),
+        );
+        return;
+      }
+      const enriched = enrichTrains(positions, nextOriented);
+      setNextLineTrains(filterSameDirectionTrains(enriched, nextOriented, null));
+    };
+    void poll();
+    interval = window.setInterval(poll, 15000);
+    return () => {
+      cancelled = true;
+      if (interval !== undefined) window.clearInterval(interval);
+    };
+  }, [inPreTransferWindow, nextOriented, nextRideIdx, route]);
+
+  // ===== 환승 전역 출발 시 "환승역입니다" 알림 (환승당 1회) =====
+  useEffect(() => {
+    if (!inPreTransferWindow || preTransferAlertedRef.current) return;
+    const sel = availableTrains.find(t => t.trainNo === selectedTrainNo) ?? selectedTrainSnapshot;
+    // 선택 열차가 환승 전역에서 출발("2")하는 순간 트리거.
+    if (!sel || sel.trainStatus !== "2") return;
+    preTransferAlertedRef.current = true;
+    toast("환승역입니다", {
+      description: nextLineName ? `${nextLineName}으로 갈아탈 준비를 하세요` : "갈아탈 준비를 하세요",
+    });
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate([120, 60, 120]);
+    }
+    setIsTrainPickerExpanded(true);
+  }, [inPreTransferWindow, availableTrains, selectedTrainNo, selectedTrainSnapshot, nextLineName]);
+
   // ===== 선택한 열차의 위치/snapshot 추적 (실데이터·sim 통합) =====
   // availableTrains가 갱신될 때마다 selected의 stationName 기준으로 currentIdx 동기화.
   useEffect(() => {
@@ -362,8 +599,36 @@ export default function Riding() {
     if (!myTrain) return;
     setSelectedTrainSnapshot(myTrain);
     const idx = ridingData.stationNames.indexOf(myTrain.stationName);
-    if (idx >= 0) setCurrentIdx(idx);
-  }, [availableTrains, ridingData]);
+    if (idx >= 0) {
+      setCurrentIdx(idx);
+    } else if (
+      myTrain.posIdxOriented >= 0 &&
+      orientedLineStations.fromIdx >= 0 &&
+      isBeforeBoardingStation(
+        myTrain,
+        routeStationSet,
+        orientedLineStations.fromIdx,
+        orientedLineStations.toIdx,
+        orientedLineStations.stations.length,
+        isCircularRide,
+      )
+    ) {
+      setCurrentIdx(0);
+    } else if (
+      myTrain.posIdxOriented >= 0 &&
+      orientedLineStations.toIdx >= 0 &&
+      myTrain.posIdxOriented > orientedLineStations.toIdx
+    ) {
+      setCurrentIdx(destinationIdx);
+    }
+  }, [
+    availableTrains,
+    destinationIdx,
+    isCircularRide,
+    orientedLineStations,
+    ridingData,
+    routeStationSet,
+  ]);
 
   // ===== 시뮬레이션 모드: 8초마다 가짜 열차들 한 정거장씩 전진 =====
   useEffect(() => {
@@ -513,7 +778,14 @@ export default function Riding() {
 
   // ===== 표시 중인 ride segment가 바뀔 때 segment-local state 리셋 =====
   // 서랍 열림/닫힘은 사용자가 정한 상태를 유지한다. 자동으로 여는 경우는 환승 진입뿐이다.
+  // 첫 마운트에서는 복원된 선택을 지우면 안 되므로 실제 segment 전환일 때만 리셋한다.
   useEffect(() => {
+    if (prevDisplayedRideIdxRef.current === null) {
+      prevDisplayedRideIdxRef.current = displayedRideIdx;
+      return;
+    }
+    if (prevDisplayedRideIdxRef.current === displayedRideIdx) return;
+    prevDisplayedRideIdxRef.current = displayedRideIdx;
     setSelectedTrainNo(null);
     setSelectedTrainSnapshot(null);
     trainNoRef.current = null;
@@ -523,6 +795,11 @@ export default function Riding() {
     setAvailableTrains([]);
     setHasFetched(false);
     setTrainPositionError(null);
+    // 환승 전역 미리보기 상태 리셋 (다음 환승 알림은 다시 울려야 함).
+    // pendingNextTrainNoRef는 carryover가 소비하므로 여기서 지우지 않는다.
+    setNextLineTrains([]);
+    setPendingNextTrainNo(null);
+    preTransferAlertedRef.current = false;
   }, [displayedRideIdx]);
 
   // 환승 구간에 진입하면 하단 서랍을 자동으로 열어 다음 열차 선택 안내를 보여준다.
@@ -530,6 +807,32 @@ export default function Riding() {
     if (!isTransferOverlay) return;
     setIsTrainPickerExpanded(true);
   }, [displayedRideIdx, isTransferOverlay]);
+
+  // ===== 선택 상태 영속화: 설정/노선 등으로 이탈했다 돌아와도 유지 =====
+  useEffect(() => {
+    try {
+      const routeRaw = sessionStorage.getItem("riding_route");
+      if (!routeRaw) return;
+      const state: RidingSessionState = {
+        currentSegmentIdx,
+        selectedTrainNo,
+        selectedTrainSnapshot,
+        currentIdx,
+        alarmEnabled,
+        alarmBefore,
+      };
+      sessionStorage.setItem(RIDING_SESSION_KEY, JSON.stringify({ routeRaw, state }));
+    } catch {
+      // sessionStorage 사용 불가 시 무시
+    }
+  }, [
+    currentSegmentIdx,
+    selectedTrainNo,
+    selectedTrainSnapshot,
+    currentIdx,
+    alarmEnabled,
+    alarmBefore,
+  ]);
 
   // ===== Ride 완료 시 자동으로 다음 segment로 진행 (또는 최종 도착) =====
   // transfer overlay 중에는 displayedRide가 "미리보기"라 도착 처리 X
@@ -561,11 +864,14 @@ export default function Riding() {
     setLocation,
   ]);
 
-  // ===== Transfer 자동 진행 (walkMinutes + 1분 여유 후) =====
+  // ===== Transfer 자동 진행 (실사용 보정 환승 시간 후) =====
   useEffect(() => {
     if (currentSegment?.type !== "transfer") return;
     if (isLastSegment) return; // 마지막 segment가 transfer일 일은 없지만 안전장치
-    const seconds = currentSegment.walkMinutes * 60 + 60; // 도보 + 1분 여유
+    const seconds = getPracticalTransferSeconds({
+      time: currentSegment.walkMinutes,
+      transferSeconds: currentSegment.walkSeconds,
+    });
     const t = setTimeout(() => {
       setCurrentSegmentIdx(idx => idx + 1);
     }, seconds * 1000);
@@ -581,27 +887,84 @@ export default function Riding() {
     const boardIdx = orientedLineStations.fromIdx;
     if (boardIdx < 0) return;
 
-    // 정렬 우선순위:
-    //   1. 보딩역에 approaching 중인 열차 (posIdx < boardIdx) 먼저
-    //   2. 보딩역에서 가까운 순 (|distance| 작은 순)
-    const sorted = [...availableTrains].sort((a, b) => {
-      const da = boardIdx - a.posIdxOriented;
-      const db = boardIdx - b.posIdxOriented;
-      const aApproaching = da >= 0;
-      const bApproaching = db >= 0;
-      if (aApproaching && !bApproaching) return -1;
-      if (!aApproaching && bApproaching) return 1;
-      return Math.abs(da) - Math.abs(db);
-    });
-    const best = sorted[0];
-    if (best) {
-      trainNoRef.current = best.trainNo;
-      setSelectedTrainNo(best.trainNo);
-      setSelectedTrainSnapshot(best);
-      setIsTrainPickerExpanded(true);
-      alarmFiredRef.current = false;
+    // 환승 전역에서 미리 골라둔 열차가 이 노선에 아직 있으면 그대로 적용 (자동선택보다 우선).
+    const pending = pendingNextTrainNoRef.current;
+    if (pending) {
+      const match = availableTrains.find(t => t.trainNo === pending);
+      if (match) {
+        pendingNextTrainNoRef.current = null;
+        trainNoRef.current = match.trainNo;
+        setSelectedTrainNo(match.trainNo);
+        setSelectedTrainSnapshot(match);
+        setIsTrainPickerExpanded(true);
+        return;
+      }
     }
-  }, [isTransferOverlay, availableTrains, orientedLineStations.fromIdx, selectedTrainNo]);
+
+    // 보딩역에서 아직 탈 수 있는 열차만 후보로 삼는다.
+    //   - 경로 이탈/목적지 통과 열차 제외 (기존 isDeepInactiveTrain)
+    //   - 보딩역 이전 역(posIdx < boardIdx): 다가오는 중 → 탑승 가능
+    //   - 보딩역에 있고 아직 출발 전(trainStatus !== "2"): 탑승 가능
+    //   - 보딩역을 지났거나(posIdx > boardIdx) 보딩역에서 이미 출발("2"): 제외
+    const boardable = availableTrains.filter(train => {
+      if (
+        isDeepInactiveTrain(
+          train,
+          routeStationSet,
+          boardIdx,
+          orientedLineStations.toIdx,
+          orientedLineStations.stations.length,
+          isCircularRide,
+        )
+      ) {
+        return false;
+      }
+      if (train.posIdxOriented < 0) return false;
+      if (isCircularRide) {
+        if (train.posIdxOriented === boardIdx) return train.trainStatus !== "2";
+        return isBeforeBoardingStation(
+          train,
+          routeStationSet,
+          boardIdx,
+          orientedLineStations.toIdx,
+          orientedLineStations.stations.length,
+          true,
+        );
+      }
+      if (train.posIdxOriented < boardIdx) return true;
+      if (train.posIdxOriented === boardIdx) return train.trainStatus !== "2";
+      return false;
+    });
+    // 탈 수 있는 열차가 없으면 자동선택하지 않는다.
+    // selectedTrainNo가 계속 null이라 다음 폴링에서 다가오는 열차를 잡는다.
+    if (boardable.length === 0) return;
+
+    // 보딩역에 가장 빨리 도착할 열차 = 보딩역에 가장 가까운(거리가 작은) 열차
+    const best = boardable.reduce((soonest, train) => {
+      const trainDistance = isCircularRide
+        ? getForwardDistance(train.posIdxOriented, boardIdx, orientedLineStations.stations.length)
+        : boardIdx - train.posIdxOriented;
+      const soonestDistance = isCircularRide
+        ? getForwardDistance(soonest.posIdxOriented, boardIdx, orientedLineStations.stations.length)
+        : boardIdx - soonest.posIdxOriented;
+      return trainDistance < soonestDistance ? train : soonest;
+    });
+
+    trainNoRef.current = best.trainNo;
+    setSelectedTrainNo(best.trainNo);
+    setSelectedTrainSnapshot(best);
+    setIsTrainPickerExpanded(true);
+    alarmFiredRef.current = false;
+  }, [
+    isTransferOverlay,
+    availableTrains,
+    isCircularRide,
+    orientedLineStations.fromIdx,
+    orientedLineStations.toIdx,
+    orientedLineStations.stations.length,
+    routeStationSet,
+    selectedTrainNo,
+  ]);
 
   const onSelectTrain = (train: EnrichedTrain) => {
     if (!ridingData) return;
@@ -611,7 +974,16 @@ export default function Riding() {
     const idxInRoute = ridingData.stationNames.indexOf(train.stationName);
     if (idxInRoute >= 0) {
       setCurrentIdx(idxInRoute);
-    } else if (train.posIdxOriented >= 0 && fromIdx >= 0 && train.posIdxOriented < fromIdx) {
+    } else if (
+      isBeforeBoardingStation(
+        train,
+        routeStationSet,
+        fromIdx,
+        toIdx,
+        lineStationsOriented.length,
+        isCircularRide,
+      )
+    ) {
       setCurrentIdx(0);
     } else if (train.posIdxOriented >= 0 && toIdx >= 0 && train.posIdxOriented > toIdx) {
       setCurrentIdx(destinationIdx);
@@ -622,6 +994,13 @@ export default function Riding() {
       `[data-pos-idx="${train.posIdxOriented}"]`,
     );
     target?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  };
+
+  // 환승 전역에서 다음 노선 열차를 미리 골라둔다. 실제 환승 시 carryover가 적용.
+  const onPreSelectNextTrain = (trainNo: string) => {
+    const next = pendingNextTrainNo === trainNo ? null : trainNo;
+    setPendingNextTrainNo(next);
+    pendingNextTrainNoRef.current = next;
   };
 
   // ===== Empty guard =====
@@ -661,7 +1040,6 @@ export default function Riding() {
   }
 
   const { stations: lineStationsOriented, fromIdx, toIdx } = orientedLineStations;
-  const routeStationSet = new Set(ridingData.stationNames);
 
   const trainsByIdx = new Map<number, EnrichedTrain[]>();
   availableTrains.forEach(t => {
@@ -717,11 +1095,6 @@ export default function Riding() {
       ? `${ridingData.fromStationName} ${sheetEtaLabel}`
       : selectedTrainMeta;
   const showTrainSelectionGuidance = !isTracking || isTransferOverlay;
-  const activeRideSegment = rideSegments[currentRideIdx]?.segment;
-  const activeRideLine =
-    activeRideSegment?.type === "ride"
-      ? getLineInfo(activeRideSegment.lineId)
-      : line;
   const markerSourceIdx =
     selectedTrainPos?.posIdxOriented ??
     (fromIdx >= 0 && currentIdx >= 0 ? fromIdx + currentIdx : -1);
@@ -731,7 +1104,6 @@ export default function Riding() {
       : 0;
   const showTrainRailMarker =
     !isTransferOverlay && isTracking && fromIdx >= 0 && toIdx > fromIdx;
-  const railMarkerColor = activeRideLine?.color ?? lineColor;
 
   const rideSegmentProgressJsx = (
     <div className="px-7 py-3.5">
@@ -780,36 +1152,36 @@ export default function Riding() {
                     aria-hidden="true"
                   />
                 )}
+                {isTransferOverlay && i === currentRideIdx && (
+                  <span
+                    data-transfer-wait-marker="true"
+                    className="pointer-events-none absolute left-0 top-1/2 z-20 h-7 w-7 -translate-x-1/2 -translate-y-1/2"
+                    aria-hidden="true"
+                  >
+                    <motion.span
+                      className="absolute inset-0 rounded-full"
+                      style={{ backgroundColor: `${segmentColor}33` }}
+                      animate={
+                        prefersReducedMotion
+                          ? { scale: 1, opacity: 0.7 }
+                          : { scale: [0.82, 1.35, 0.82], opacity: [0.45, 0.9, 0.45] }
+                      }
+                      transition={
+                        prefersReducedMotion
+                          ? { duration: 0.01 }
+                          : { duration: 1.3, repeat: Infinity, ease: [0.22, 1, 0.36, 1] }
+                      }
+                    />
+                    <span
+                      className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white shadow-[0_2px_8px_rgba(27,40,56,0.24)]"
+                      style={{ backgroundColor: segmentColor }}
+                    />
+                  </span>
+                )}
               </span>
             </button>
           );
         })}
-        {isTransferOverlay && (
-          <span
-            data-transfer-wait-marker="true"
-            className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-7 w-7 -translate-x-1/2 -translate-y-1/2"
-            aria-hidden="true"
-          >
-            <motion.span
-              className="absolute inset-0 rounded-full"
-              style={{ backgroundColor: `${railMarkerColor}33` }}
-              animate={
-                prefersReducedMotion
-                  ? { scale: 1, opacity: 0.7 }
-                  : { scale: [0.82, 1.35, 0.82], opacity: [0.45, 0.9, 0.45] }
-              }
-              transition={
-                prefersReducedMotion
-                  ? { duration: 0.01 }
-                  : { duration: 1.3, repeat: Infinity, ease: [0.22, 1, 0.36, 1] }
-              }
-            />
-            <span
-              className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white shadow-[0_2px_8px_rgba(27,40,56,0.24)]"
-              style={{ backgroundColor: railMarkerColor }}
-            />
-          </span>
-        )}
       </div>
     </div>
   );
@@ -819,6 +1191,69 @@ export default function Riding() {
       <h2 className="truncate px-1 text-[20px] font-bold leading-tight text-[#1B2838]">
         열차를 고르세요
       </h2>
+      {fastTransferLabel && (
+        <p className="mt-1 flex items-center gap-1 px-1 text-[12px] font-semibold text-[#E67E22]">
+          <Train size={13} />
+          빠른 환승 {fastTransferLabel}
+        </p>
+      )}
+    </div>
+  ) : null;
+
+  // 환승 전역 미리선택 패널: 현재 열차 추적은 그대로 두고, 다음 노선 열차를 미리 고른다.
+  const nextLineColor = nextRideSegment
+    ? getLineInfo(nextRideSegment.lineId)?.color ?? "#1B2838"
+    : "#1B2838";
+  const preTransferPanelJsx = inPreTransferWindow ? (
+    <div className="border-b border-[#F0E4D0] bg-[#FFF8EF] px-4 pb-3 pt-3">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="line-badge shrink-0 text-[10px]" style={{ backgroundColor: nextLineColor }}>
+          {getLineInfo(nextRideSegment?.lineId ?? "")?.shortName ?? ""}
+        </span>
+        <span className="text-[13px] font-bold text-[#1B2838]">
+          곧 {nextRideSegment?.fromStationName} 환승 · 탈 열차 미리 선택
+        </span>
+      </div>
+      {fastTransferLabel && (
+        <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-white/70 px-2.5 py-1.5 text-[12px] font-semibold text-[#E67E22]">
+          <Train size={13} />
+          <span>빠른 환승 {fastTransferLabel}</span>
+        </div>
+      )}
+      {nextBoardable.length === 0 ? (
+        <p className="px-1 text-[12px] text-[#8E8E93]">다음 노선 열차 위치를 확인하는 중…</p>
+      ) : (
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+          {nextBoardable.map(train => {
+            const selected = pendingNextTrainNo === train.trainNo;
+            return (
+              <button
+                key={train.trainNo}
+                type="button"
+                onClick={() => onPreSelectNextTrain(train.trainNo)}
+                aria-pressed={selected}
+                className="btn-press flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[12px] font-bold"
+                style={{
+                  backgroundColor: selected ? nextLineColor : "white",
+                  color: selected ? "white" : "#1B2838",
+                  border: `1.5px solid ${nextLineColor}`,
+                }}
+              >
+                <Train size={12} style={{ color: selected ? "white" : nextLineColor }} />
+                <span className="whitespace-nowrap">{train.trainNo}</span>
+                <span className="whitespace-nowrap text-[10px] font-semibold opacity-80">
+                  {train.stationName}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {pendingNextTrainNo && (
+        <p className="mt-1.5 px-1 text-[11px] font-semibold" style={{ color: nextLineColor }}>
+          {pendingNextTrainNo}호 미리 선택됨 · 환승하면 자동 적용됩니다
+        </p>
+      )}
     </div>
   ) : null;
 
@@ -876,16 +1311,35 @@ export default function Riding() {
                   className="w-full flex flex-col items-center justify-end gap-1 mb-1.5"
                   style={{ minHeight: "45px" }}
                 >
-                  {trainsHere.slice(0, 2).map(train => (
-                    <CompactTrainPin
-                      key={train.trainNo}
-                      train={train}
-                      lineColor={lineColor}
-                      isSelected={train.trainNo === selectedTrainNo}
-                      onSelect={() => onSelectTrain(train)}
-                      stationWidth={STATION_WIDTH}
-                    />
-                  ))}
+                  {trainsHere.slice(0, 2).map(train => {
+                    const isSelected = train.trainNo === selectedTrainNo;
+                    const inactiveLevel: TrainInactiveLevel = isSelected
+                      ? "none"
+                      : isDeepInactiveTrain(
+                          train,
+                          routeStationSet,
+                          fromIdx,
+                          toIdx,
+                          lineStationsOriented.length,
+                          isCircularRide,
+                        )
+                      ? "deep"
+                      : selectedTrainNo !== null
+                      ? "soft"
+                      : "none";
+
+                    return (
+                      <CompactTrainPin
+                        key={train.trainNo}
+                        train={train}
+                        lineColor={lineColor}
+                        isSelected={isSelected}
+                        inactiveLevel={inactiveLevel}
+                        onSelect={() => onSelectTrain(train)}
+                        stationWidth={STATION_WIDTH}
+                      />
+                    );
+                  })}
                   {trainsHere.length > 2 && (
                     <span className="text-[11px] font-semibold text-[#8E8E93]">
                       +{trainsHere.length - 2}
@@ -1228,7 +1682,8 @@ export default function Riding() {
               {stations.map((station, idx) => {
                 const isCurrent = idx === currentIdx;
                 const isLastStop = idx === destinationIdx;
-                const isInactiveStop = !isCurrent && !isLastStop;
+                const isPassedStop = idx < currentIdx;
+                const isUpcomingStop = idx > currentIdx;
                 const minutesAway = (idx - currentIdx) * 2;
 
                 return (
@@ -1237,7 +1692,7 @@ export default function Riding() {
                     animate={isCurrent ? { backgroundColor: "rgba(248,250,252,1)" } : { backgroundColor: "rgba(255,255,255,1)" }}
                     transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
                     className={`flex min-h-11 items-center border-b border-[#F2F2F5] px-3 py-1.5 last:border-0 ${
-                      isInactiveStop ? "opacity-35" : ""
+                      isPassedStop ? "opacity-35" : isUpcomingStop ? "opacity-[0.64]" : ""
                     }`}
                   >
                     <div className="mr-3 flex h-6 w-4 items-center justify-center">
@@ -1266,11 +1721,11 @@ export default function Riding() {
                       <span
                         className={`min-w-0 truncate text-[14px] ${
                           isCurrent || isLastStop ? "font-bold" : "font-medium"
-                        } ${isInactiveStop ? "text-[#8E8E93]" : "text-[#1B2838]"}`}
+                        } ${isPassedStop ? "text-[#8E8E93]" : "text-[#1B2838]"}`}
                       >
                         {station.name}
                       </span>
-                      {station.isTransfer && station.transferLines.length > 0 && !isInactiveStop && (
+                      {station.isTransfer && station.transferLines.length > 0 && !isPassedStop && (
                         <div className="flex shrink-0 items-center gap-1">
                           {station.transferLines.slice(0, 2).map(lineId => {
                             const transferLine = getLineInfo(lineId);
@@ -1332,6 +1787,7 @@ export default function Riding() {
             onToggleExpand={() => setIsTrainPickerExpanded(value => !value)}
             detailsSlot={sheetDetailsJsx}
           >
+            {preTransferPanelJsx}
             {pickerInSheet && pickerJsx}
           </TransferMiniSheet>
         )}
@@ -1347,12 +1803,14 @@ function CompactTrainPin({
   train,
   lineColor,
   isSelected,
+  inactiveLevel,
   onSelect,
   stationWidth,
 }: {
   train: EnrichedTrain;
   lineColor: string;
   isSelected: boolean;
+  inactiveLevel: "none" | "soft" | "deep";
   onSelect: () => void;
   stationWidth: number;
 }) {
@@ -1367,6 +1825,9 @@ function CompactTrainPin({
 
   const pulsing = train.trainStatus === "0" || train.trainStatus === "1";
   const inTransit = train.trainStatus === "2" || train.trainStatus === "0";
+  const isSoftInactive = inactiveLevel === "soft";
+  const isDeepInactive = inactiveLevel === "deep";
+  const isInactive = inactiveLevel !== "none";
 
   return (
     <motion.button
@@ -1374,8 +1835,12 @@ function CompactTrainPin({
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0, x: transitOffsetPx }}
       transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
-      onClick={onSelect}
-      className="relative btn-press flex items-center"
+      onClick={isDeepInactive ? undefined : onSelect}
+      aria-pressed={isSelected}
+      aria-disabled={isDeepInactive}
+      className={`relative flex items-center ${
+        isDeepInactive ? "cursor-not-allowed" : "btn-press"
+      } ${isSelected ? "z-20" : "z-0"}`}
       title={`${train.trainNo}호 · ${train.destination || "—"} 방면${
         train.trainStatus === "2"
           ? " (출발 직후)"
@@ -1387,22 +1852,28 @@ function CompactTrainPin({
       }`}
     >
       <div
-        className="flex items-center gap-1 px-1.5 py-1 rounded-full"
+        className="flex items-center gap-1 px-1.5 py-1 rounded-full transition-[background-color,opacity,filter] duration-200"
         style={{
-          backgroundColor: lineColor,
+          backgroundColor: isDeepInactive ? "#C7C7CC" : lineColor,
           color: "white",
+          opacity: isDeepInactive ? 0.46 : isSoftInactive ? 0.38 : 1,
+          filter: isDeepInactive ? "saturate(0.45)" : isSoftInactive ? "saturate(0.7)" : undefined,
           boxShadow: isSelected
             ? `0 0 0 2px white, 0 0 0 4px ${lineColor}`
-            : pulsing
+            : pulsing && !isInactive
             ? `0 0 0 2px ${lineColor}33`
             : undefined,
         }}
       >
         <Train size={12} className="text-white shrink-0" />
-        <span className="text-[12px] font-bold leading-none">{train.trainNo}</span>
+        {isSelected && (
+          <span className="text-[12px] font-bold leading-none whitespace-nowrap">
+            {train.trainNo}
+          </span>
+        )}
         {inTransit && (
           <span
-            className="ml-0.5 text-[11px] leading-none font-bold"
+            className="text-[11px] leading-none font-bold"
             style={{ color: "rgba(255,255,255,0.85)" }}
           >
             {train.trainStatus === "2" ? "→" : "←"}

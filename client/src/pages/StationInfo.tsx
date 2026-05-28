@@ -460,7 +460,7 @@ export default function StationInfo() {
         </div>
       </motion.div>
 
-      {/* Fast transfer car (2차 기능 더미) */}
+      {/* Fast transfer car */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -470,11 +470,10 @@ export default function StationInfo() {
         <h3 className="text-[14px] font-semibold text-[#1B2838] mb-3 flex items-center gap-2">
           <Train size={16} className="text-[#4A90D9]" />
           빠른 환승 칸
-          <span className="text-[10px] bg-[#F0F0F2] text-[#8E8E93] px-1.5 py-0.5 rounded ml-1">준비중</span>
         </h3>
-        <div className="ios-card p-4 opacity-70">
+        <div className="ios-card p-4">
           <p className="text-[13px] text-[#8E8E93]">
-            빠른 환승을 위한 최적 탑승 위치 정보가 곧 제공됩니다.
+            빠른 환승 위치는 타고 온 노선과 갈아탈 노선의 방면에 따라 달라져요. 경로 상세에서 실제 환승 조합 기준으로 확인할 수 있습니다.
           </p>
         </div>
       </motion.div>

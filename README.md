@@ -108,6 +108,13 @@ The envs above are system envs, when use env in website code, refer `server/_cor
 
 ---
 
+## Static Subway Data
+
+- Fast-transfer car/door data is generated from `국토교통부_철도역 빠른 환승 정보_20250923.csv`.
+- After replacing the CSV, run `node scripts/generate-fast-transfers.mjs` to regenerate `client/src/data/officialFastTransfers.ts`.
+
+---
+
 ## Frontend Workflow
 
 1. Choose a design style before you write any frontend code according to Design Guide (color, font, shadow, art style). Remember to edit `client/src/index.css` for global theming and add needed font using google font cdn in `client/index.html`.

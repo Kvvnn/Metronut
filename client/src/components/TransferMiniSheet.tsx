@@ -5,8 +5,9 @@
  */
 import { motion, AnimatePresence, useDragControls } from "framer-motion";
 import type { PanInfo } from "framer-motion";
-import { useRef } from "react";
-import type { MouseEvent, ReactNode } from "react";
+import { useEffect, useRef } from "react";
+import type { MouseEvent, PointerEvent, ReactNode } from "react";
+import type { FastTransferInfo } from "@shared/fastTransfer";
 
 export interface TransferSegmentData {
   type: "transfer";
@@ -18,8 +19,7 @@ export interface TransferSegmentData {
   walkMinutes: number;
   walkSeconds?: number;
   walkDistanceMeters?: number;
-  fastCar: number;
-  fastDoor: number;
+  fastTransfer?: FastTransferInfo | null;
 }
 
 const TAB_BAR_HEIGHT = 52;
@@ -45,6 +45,38 @@ export default function TransferMiniSheet({
 }) {
   const dragControls = useDragControls();
   const didDragRef = useRef(false);
+  const dragHandleRef = useRef<HTMLDivElement>(null);
+  const isTouchDraggingRef = useRef(false);
+
+  useEffect(() => {
+    const handle = dragHandleRef.current;
+    if (!handle) return;
+
+    const preventPageScroll = (event: TouchEvent) => {
+      if (!isTouchDraggingRef.current) return;
+      event.preventDefault();
+    };
+    const stopTouchDrag = () => {
+      isTouchDraggingRef.current = false;
+    };
+
+    handle.addEventListener("touchmove", preventPageScroll, { passive: false });
+    window.addEventListener("touchend", stopTouchDrag);
+    window.addEventListener("touchcancel", stopTouchDrag);
+
+    return () => {
+      handle.removeEventListener("touchmove", preventPageScroll);
+      window.removeEventListener("touchend", stopTouchDrag);
+      window.removeEventListener("touchcancel", stopTouchDrag);
+    };
+  }, []);
+
+  const handleDragPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") {
+      isTouchDraggingRef.current = true;
+    }
+    dragControls.start(event);
+  };
 
   const handleTopSlotClick = (event: MouseEvent<HTMLDivElement>) => {
     if (didDragRef.current) {
@@ -58,6 +90,7 @@ export default function TransferMiniSheet({
   };
 
   const handleDragEnd = (_: unknown, info: PanInfo) => {
+    isTouchDraggingRef.current = false;
     window.setTimeout(() => {
       didDragRef.current = false;
     }, 0);
@@ -97,7 +130,7 @@ export default function TransferMiniSheet({
         didDragRef.current = true;
       }}
       onDragEnd={handleDragEnd}
-      className="fixed left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50 bg-white rounded-t-2xl shadow-[0_-6px_28px_rgba(0,0,0,0.14)] select-none overflow-hidden"
+      className="fixed left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50 bg-white rounded-t-2xl shadow-[0_-6px_28px_rgba(0,0,0,0.14)] select-none overflow-hidden overscroll-contain"
       style={{
         bottom: `calc(${TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
       }}
@@ -105,8 +138,16 @@ export default function TransferMiniSheet({
     >
       {topSlot && (
         <div
-          className="cursor-grab bg-[#F8F9FB] active:cursor-grabbing"
-          onPointerDown={(e) => dragControls.start(e)}
+          ref={dragHandleRef}
+          className="cursor-grab touch-none overscroll-contain bg-[#F8F9FB] active:cursor-grabbing"
+          style={{ touchAction: "none", WebkitUserSelect: "none" }}
+          onPointerDown={handleDragPointerDown}
+          onPointerUp={() => {
+            isTouchDraggingRef.current = false;
+          }}
+          onPointerCancel={() => {
+            isTouchDraggingRef.current = false;
+          }}
           onClick={handleTopSlotClick}
         >
           {topSlot}

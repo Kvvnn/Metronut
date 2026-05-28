@@ -64,7 +64,7 @@ export interface RouteSegment {
   stations: Station[];
   time: number;
   isTransfer: boolean;
-  /** 공식 환승 동선 초 단위 원자료. 없으면 기본 분 단위 추정값을 사용. */
+  /** 앱에서 쓰는 보정 환승 시간(초). 없으면 기본 분 단위 추정값을 사용. */
   transferSeconds?: number;
   transferDistanceMeters?: number;
   /** 이 ride 구간에 적합한 운행 패턴 (예: '인천행'). transfer면 undefined */
@@ -90,6 +90,8 @@ const adjacencyList = new Map<string, AdjacentEdge[]>();
 const patternsByLine = new Map<string, OperatingPattern[]>();
 
 const TRANSFER_TIME = 3;
+const MIN_PRACTICAL_TRANSFER_MINUTES = 2;
+const TRANSFER_WAYFINDING_BUFFER_SECONDS = 60;
 export const LONG_TRANSFER_THRESHOLD_SECONDS = 240;
 const STATE_SEPARATOR = "::";
 const LONG_ACCESS_LINE_PENALTY: Record<string, number> = {
@@ -190,9 +192,14 @@ function getTransferDetails(
   );
   if (!official) return { time: fallbackTime };
 
+  const practicalMinutes = Math.max(
+    MIN_PRACTICAL_TRANSFER_MINUTES,
+    Math.ceil((official.seconds + TRANSFER_WAYFINDING_BUFFER_SECONDS) / 60),
+  );
+
   return {
-    time: Math.max(1, Math.ceil(official.seconds / 60)),
-    transferSeconds: official.seconds,
+    time: practicalMinutes,
+    transferSeconds: practicalMinutes * 60,
     transferDistanceMeters: official.distanceMeters,
   };
 }
@@ -204,17 +211,21 @@ function getTransferTimeTotal(segments: RouteSegment[]) {
 }
 
 export function isLongTransferSegment(segment: Pick<RouteSegment, "time" | "transferSeconds">) {
-  return (segment.transferSeconds ?? segment.time * 60) >= LONG_TRANSFER_THRESHOLD_SECONDS;
+  return getPracticalTransferSeconds(segment) >= LONG_TRANSFER_THRESHOLD_SECONDS;
+}
+
+export function getPracticalTransferSeconds(segment: Pick<RouteSegment, "time" | "transferSeconds">) {
+  const practicalMinutes = Math.max(
+    MIN_PRACTICAL_TRANSFER_MINUTES,
+    Math.ceil((segment.transferSeconds ?? segment.time * 60) / 60),
+  );
+  return practicalMinutes * 60;
 }
 
 export function formatTransferDuration(segment: Pick<RouteSegment, "time" | "transferSeconds">) {
-  if (!segment.transferSeconds) return `약 ${segment.time}분`;
-
-  const minutes = Math.floor(segment.transferSeconds / 60);
-  const seconds = segment.transferSeconds % 60;
-  if (minutes === 0) return `${seconds}초`;
-  if (seconds === 0) return `${minutes}분`;
-  return `${minutes}분 ${seconds}초`;
+  const durationSeconds = getPracticalTransferSeconds(segment);
+  const minutes = Math.ceil(durationSeconds / 60);
+  return `${minutes}분`;
 }
 
 // 한국어 자모 정렬용: 종착역이 현재 진행 방향에 있는지 보고 적합한 패턴 선택
