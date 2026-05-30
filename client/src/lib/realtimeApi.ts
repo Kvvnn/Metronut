@@ -6,6 +6,7 @@
  * 
  * tRPC를 사용할 수 없는 컨텍스트에서는 직접 /api/trpc 엔드포인트를 호출합니다.
  */
+import { getUseSimulatedTrainData } from "@/lib/simulationSettings";
 
 export interface ArrivalInfo {
   stationName: string;
@@ -22,6 +23,10 @@ export interface ArrivalInfo {
  * 실시간 도착 정보 가져오기 (서버 프록시 경유)
  */
 export async function getRealtimeArrivals(stationName: string): Promise<ArrivalInfo[]> {
+  if (getUseSimulatedTrainData()) {
+    return generateSimulatedArrivals(stationName);
+  }
+
   try {
     // tRPC batch endpoint를 직접 호출 (React 외부에서 사용 가능)
     const url = `/api/trpc/metro.getArrivals?batch=1&input=${encodeURIComponent(
@@ -107,6 +112,8 @@ export interface TrainPosition {
   trainStatus: string;
   destination: string;
   receivedAt: string;
+  /** 급행여부 (directAt): "일반" | "급행" | "특급" */
+  trainType: string;
 }
 
 export async function getTrainPositions(
@@ -117,6 +124,14 @@ export async function getTrainPositions(
   errorCode?: string;
   errorMessage?: string;
 }> {
+  if (getUseSimulatedTrainData()) {
+    return {
+      positions: [],
+      isSimulated: true,
+      errorCode: "SIMULATION_ENABLED",
+    };
+  }
+
   try {
     const apiLineName = lineName.startsWith("2호선") ? "2호선" : lineName;
     const url = `/api/trpc/metro.getTrainPositions?batch=1&input=${encodeURIComponent(

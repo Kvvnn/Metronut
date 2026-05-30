@@ -50,6 +50,9 @@ function generateSimulatedArrivals(stationName: string) {
         lineId: "2",
         direction: `${dest} 방면`,
         destination: dest,
+        terminusId: "",
+        terminusName: dest,
+        isLastTrain: false,
         arrivalMessage: minutes <= 1 ? "곧 도착" : `${minutes}분 후`,
         arrivalTime: minutes * 60,
         trainType: Math.random() > 0.8 ? "급행" : "일반",
@@ -68,6 +71,14 @@ function parseApiError(data: any, fallbackMessage: string) {
   };
 }
 
+const REALTIME_STATION_NAME_ALIASES: Record<string, string> = {
+  "4.19 민주묘지": "4.19민주묘지",
+};
+
+function normalizeRealtimeStationName(name: string) {
+  return REALTIME_STATION_NAME_ALIASES[name] ?? name;
+}
+
 type MetroTrainPosition = {
   trainNo: string;
   stationName: string;
@@ -75,7 +86,16 @@ type MetroTrainPosition = {
   trainStatus: string;
   destination: string;
   receivedAt: string;
+  /** 급행여부 (directAt): 일반/급행/특급 */
+  trainType: string;
 };
+
+// 서울교통공사 realtimePosition directAt: 0=일반, 1=급행, 7=특급
+function mapTrainType(directAt: string): string {
+  if (directAt === "1") return "급행";
+  if (directAt === "7") return "특급";
+  return "일반";
+}
 
 function getReceivedAtTime(value: string) {
   const timestamp = Date.parse(value.replace(" ", "T"));
@@ -154,6 +174,11 @@ export const metroRouter = router({
           lineId: mapSubwayId(item.subwayId),
           direction: item.trainLineNm,
           destination: item.bstatnNm,
+          // 종착역(행선지) — 운행계통 판별용. statnTnm이 비면 bstatnNm으로 폴백.
+          terminusId: item.statnTid || "",
+          terminusName: item.statnTnm || item.bstatnNm || "",
+          // 막차 여부 (lstcarAt: "1"=막차)
+          isLastTrain: item.lstcarAt === "1",
           arrivalMessage: item.arvlMsg2 || item.arvlMsg3,
           arrivalTime: parseInt(item.barvlDt) || 0,
           trainType: item.btrainSttus === "1" ? "급행" : "일반",
@@ -221,11 +246,12 @@ export const metroRouter = router({
         const positions = dedupeTrainPositions(
           list.map((item: any) => ({
             trainNo: String(item.trainNo ?? ""),
-            stationName: String(item.statnNm ?? ""),
+            stationName: normalizeRealtimeStationName(String(item.statnNm ?? "")),
             updnLine: String(item.updnLine ?? ""), // 0=상행/내선, 1=하행/외선
             trainStatus: String(item.trainSttus ?? ""), // 0=진입, 1=도착, 2=출발
-            destination: String(item.statnTnm ?? ""),
+            destination: normalizeRealtimeStationName(String(item.statnTnm ?? "")),
             receivedAt: String(item.recptnDt ?? ""),
+            trainType: mapTrainType(String(item.directAt ?? "0")), // 급행여부
           })),
         );
         return { positions, isSimulated: false };

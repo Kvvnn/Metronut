@@ -10,7 +10,14 @@
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate"
+    "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "mobile:install": "pnpm --dir apps/mobile install",
+    "mobile:start": "pnpm --dir apps/mobile start",
+    "mobile:ios": "pnpm --dir apps/mobile ios",
+    "mobile:android": "pnpm --dir apps/mobile android",
+    "mobile:web": "pnpm --dir apps/mobile web",
+    "mobile:lint": "pnpm --dir apps/mobile lint",
+    "mobile:smoke": "tsx apps/mobile/scripts/smoke-metro.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",

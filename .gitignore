@@ -117,3 +117,7 @@ client/public/__manus__/version.json
 # Build artifact: pre-bundled Vercel function dependency
 api/_app.mjs
 api/pnpm-lock.yaml
+
+# Tool artifacts
+.playwright-mcp/
+.superset/

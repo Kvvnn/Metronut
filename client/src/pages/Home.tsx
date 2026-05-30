@@ -22,10 +22,12 @@ import {
   Briefcase,
   GraduationCap,
 } from "lucide-react";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { useState, useCallback, useEffect } from "react";
+import { motion, AnimatePresence, useReducedMotion, useDragControls } from "framer-motion";
+import type { PanInfo } from "framer-motion";
+import { useState, useCallback, useEffect, useRef } from "react";
+import type { PointerEvent } from "react";
 import MetroMap from "@/components/MetroMap";
-import type { StationRole } from "@/components/MetroMap";
+import type { MetroMapHandle, StationRole } from "@/components/MetroMap";
 import RouteConfirmDialog from "@/components/RouteConfirmDialog";
 import StationSearchDropdown from "@/components/StationSearchDropdown";
 import {
@@ -52,14 +54,18 @@ const stationFavoriteColorMap = {
   school: "#27AE60",
 } satisfies Record<StationFavoriteKind, string>;
 
-const recentRoutes = [
-  { from: "강남", to: "홍대입구", time: "32분" },
-  { from: "서울역", to: "잠실", time: "28분" },
-  { from: "신도림", to: "왕십리", time: "25분" },
-];
+const QUICK_ACCESS_EXPAND_THRESHOLD_PX = -28;
+const QUICK_ACCESS_EXPAND_VELOCITY = -320;
+const QUICK_ACCESS_COLLAPSE_THRESHOLD_PX = 42;
+const QUICK_ACCESS_COLLAPSE_VELOCITY = 420;
 
 export default function Home() {
   const [, setLocation] = useLocation();
+  const metroMapRef = useRef<MetroMapHandle>(null);
+  const quickAccessDragControls = useDragControls();
+  const quickAccessDragHandleRef = useRef<HTMLButtonElement>(null);
+  const didQuickAccessDragRef = useRef(false);
+  const isQuickAccessTouchDraggingRef = useRef(false);
   const search = useSearch();
   const searchParams = new URLSearchParams(search);
   const [from, setFrom] = useState(searchParams.get("from") || "");
@@ -67,6 +73,7 @@ export default function Home() {
   const [via, setVia] = useState(searchParams.get("via") || "");
   const [isViaExpanded, setIsViaExpanded] = useState(Boolean(searchParams.get("via")));
   const [showRecent, setShowRecent] = useState(false);
+  const [isQuickAccessCollapsed, setIsQuickAccessCollapsed] = useState(false);
   const [favoriteRoutes, setFavoriteRoutes] = useState<FavoriteRoute[]>(() => getFavoriteRoutes());
   const [stationFavoriteMap, setStationFavoriteMap] = useState<StationFavoriteMap>(() =>
     getStationFavoriteMap(),
@@ -77,10 +84,15 @@ export default function Home() {
     duration: prefersReducedMotion ? 0.01 : 0.24,
     ease: [0.22, 1, 0.36, 1] as const,
   };
+  const quickAccessTransition = {
+    duration: prefersReducedMotion ? 0.01 : 0.24,
+    ease: [0.22, 1, 0.36, 1] as const,
+  };
   // confirm 팝업이 dismiss됐는지 (취소 누르면 true, 새 선택 시 false로 리셋)
   const [confirmDismissed, setConfirmDismissed] = useState(false);
   // 검색 dropdown 상태
   const [searchField, setSearchField] = useState<"from" | "via" | "to" | null>(null);
+  const quickAccessPanelId = "home-quick-access-panel";
 
   useEffect(() => {
     const nextVia = searchParams.get("via") || "";
@@ -107,6 +119,68 @@ export default function Home() {
       window.removeEventListener("focus", refreshFavorites);
     };
   }, []);
+
+  useEffect(() => {
+    const handle = quickAccessDragHandleRef.current;
+    if (!handle) return;
+
+    const preventPageScroll = (event: TouchEvent) => {
+      if (!isQuickAccessTouchDraggingRef.current) return;
+      event.preventDefault();
+    };
+    const stopTouchDrag = () => {
+      isQuickAccessTouchDraggingRef.current = false;
+    };
+
+    handle.addEventListener("touchmove", preventPageScroll, { passive: false });
+    window.addEventListener("touchend", stopTouchDrag);
+    window.addEventListener("touchcancel", stopTouchDrag);
+
+    return () => {
+      handle.removeEventListener("touchmove", preventPageScroll);
+      window.removeEventListener("touchend", stopTouchDrag);
+      window.removeEventListener("touchcancel", stopTouchDrag);
+    };
+  }, []);
+
+  const handleQuickAccessPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === "touch") {
+      isQuickAccessTouchDraggingRef.current = true;
+    }
+    quickAccessDragControls.start(event);
+  };
+
+  const toggleQuickAccessCollapsed = () => {
+    if (didQuickAccessDragRef.current) {
+      didQuickAccessDragRef.current = false;
+      return;
+    }
+    setIsQuickAccessCollapsed(value => !value);
+  };
+
+  const handleQuickAccessDragEnd = (_: unknown, info: PanInfo) => {
+    isQuickAccessTouchDraggingRef.current = false;
+    window.setTimeout(() => {
+      didQuickAccessDragRef.current = false;
+    }, 0);
+
+    if (
+      isQuickAccessCollapsed &&
+      (info.offset.y < QUICK_ACCESS_EXPAND_THRESHOLD_PX ||
+        info.velocity.y < QUICK_ACCESS_EXPAND_VELOCITY)
+    ) {
+      setIsQuickAccessCollapsed(false);
+      return;
+    }
+
+    if (
+      !isQuickAccessCollapsed &&
+      (info.offset.y > QUICK_ACCESS_COLLAPSE_THRESHOLD_PX ||
+        info.velocity.y > QUICK_ACCESS_COLLAPSE_VELOCITY)
+    ) {
+      setIsQuickAccessCollapsed(true);
+    }
+  };
 
   const handleStationRoleSelect = useCallback((name: string, role: StationRole) => {
     setConfirmDismissed(false);
@@ -161,17 +235,17 @@ export default function Home() {
     setTo(from);
   };
 
-  const quickRoutes = showRecent ? recentRoutes : favoriteRoutes;
+  const quickRoutes = favoriteRoutes;
   const stationFavoriteCount = STATION_FAVORITE_KINDS.filter(
     ({ kind }) => stationFavoriteMap[kind],
   ).length;
   const favoriteItemCount = favoriteRoutes.length + stationFavoriteCount;
-  const quickAccessCount = showRecent ? recentRoutes.length : favoriteItemCount;
 
   const handleFavoriteStationSelect = (stationName: string) => {
-    const targetField = searchField ?? (!from ? "from" : !to ? "to" : "to");
-    handleStationRoleSelect(stationName, targetField);
-    if (targetField === "via") setIsViaExpanded(true);
+    const opened = metroMapRef.current?.focusStation(stationName, { openMenu: true }) ?? false;
+    if (opened) {
+      setConfirmDismissed(true);
+    }
     setSearchField(null);
   };
 
@@ -190,14 +264,14 @@ export default function Home() {
       >
         {/* Compact search bar */}
         <div className="flex items-center gap-2">
-          <div className="flex-1 flex items-center gap-2 bg-[#F5F5F7] rounded-2xl px-3 py-2.5">
-            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+          <div className="flex-1 flex items-center gap-2 bg-[#F5F5F7] rounded-2xl px-3.5 py-2.5">
+            <div className="flex flex-col gap-1 flex-1 min-w-0">
               <div
-                className="flex items-center gap-2 cursor-pointer"
+                className="flex min-h-8 cursor-pointer items-center gap-2.5 px-1"
                 onClick={() => setSearchField("from")}
               >
                 <div className="w-2 h-2 rounded-full bg-[#4A90D9] shrink-0" />
-                <span className={`text-[14px] truncate ${from ? "text-[#1B2838] font-medium" : "text-[#8E8E93]"}`}>
+                <span className={`truncate text-[15px] font-semibold ${from ? "text-[#1B2838]" : "text-[#6F7480] opacity-75"}`}>
                   {from || "출발역"}
                 </span>
                 {from && (
@@ -266,11 +340,11 @@ export default function Home() {
                 <div className="mx-2 border-t border-[#E5E5EA]" />
               )}
               <div
-                className="flex items-center gap-2 cursor-pointer"
+                className="flex min-h-8 cursor-pointer items-center gap-2.5 px-1"
                 onClick={() => setSearchField("to")}
               >
                 <div className="w-2 h-2 rounded-full bg-[#E74C3C] shrink-0" />
-                <span className={`text-[14px] truncate ${to ? "text-[#1B2838] font-medium" : "text-[#8E8E93]"}`}>
+                <span className={`truncate text-[15px] font-semibold ${to ? "text-[#1B2838]" : "text-[#6F7480] opacity-75"}`}>
                   {to || "도착역"}
                 </span>
                 {to && (
@@ -313,8 +387,9 @@ export default function Home() {
       </motion.div>
 
       {/* Metro Map - 메인 영역 */}
-      <div className="flex-1 relative">
+      <div className="relative min-h-0 flex-1">
         <MetroMap
+          ref={metroMapRef}
           onStationRoleSelect={handleStationRoleSelect}
           highlightedStation={from || to || via || undefined}
           selections={{ from, via, to }}
@@ -348,18 +423,63 @@ export default function Home() {
       <motion.div
         initial={{ y: 100 }}
         animate={{ y: 0 }}
-        transition={{ duration: 0.5, delay: 0.3, ease: [0.23, 1, 0.32, 1] }}
-        className="z-20 rounded-t-2xl border-t border-[#F0F0F2] bg-white/95 shadow-[0_-8px_24px_rgba(27,40,56,0.08)] backdrop-blur-md safe-bottom"
+        transition={{
+          duration: prefersReducedMotion ? 0.01 : 0.5,
+          delay: prefersReducedMotion ? 0 : 0.3,
+          ease: [0.23, 1, 0.32, 1],
+        }}
+        drag="y"
+        dragControls={quickAccessDragControls}
+        dragListener={false}
+        dragMomentum={false}
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{
+          top: isQuickAccessCollapsed ? 0.45 : 0.08,
+          bottom: isQuickAccessCollapsed ? 0.08 : 0.35,
+        }}
+        onDragStart={() => {
+          didQuickAccessDragRef.current = true;
+        }}
+        onDragEnd={handleQuickAccessDragEnd}
+        className="z-20 shrink-0 select-none rounded-t-2xl border-t border-[#F0F0F2] bg-white/95 shadow-[0_-8px_24px_rgba(27,40,56,0.08)] backdrop-blur-md safe-bottom"
       >
-        <div className="sheet-handle" />
-        <div className="px-4 pb-3 pt-1">
+        <button
+          ref={quickAccessDragHandleRef}
+          type="button"
+          onPointerDown={handleQuickAccessPointerDown}
+          onPointerUp={() => {
+            isQuickAccessTouchDraggingRef.current = false;
+          }}
+          onPointerCancel={() => {
+            isQuickAccessTouchDraggingRef.current = false;
+          }}
+          onClick={toggleQuickAccessCollapsed}
+          className="btn-press flex w-full cursor-grab touch-none items-center justify-center py-1.5 active:cursor-grabbing"
+          style={{ touchAction: "none", WebkitUserSelect: "none" }}
+          aria-label={isQuickAccessCollapsed ? "즐겨찾기 패널 펼치기" : "즐겨찾기 패널 접기"}
+          aria-expanded={!isQuickAccessCollapsed}
+          aria-controls={quickAccessPanelId}
+        >
+          <span className="sheet-handle !my-0" />
+        </button>
+        <AnimatePresence initial={false}>
+          {!isQuickAccessCollapsed && (
+            <motion.div
+              id={quickAccessPanelId}
+              key="quick-access-content"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={quickAccessTransition}
+              className="overflow-hidden px-4 pb-3 pt-1"
+            >
           {/* Toggle recent/favorites */}
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div className="flex rounded-2xl bg-[#F5F5F7] p-1">
+          <div className="mb-3 flex items-center justify-center">
+            <div className="inline-flex rounded-2xl bg-[#F5F5F7] p-1">
               <button
                 type="button"
                 onClick={() => setShowRecent(false)}
-                className={`btn-press flex min-h-8 items-center gap-1.5 rounded-xl px-3 text-[12px] font-bold transition-all ${
+                className={`btn-press flex min-h-8 items-center gap-1.5 rounded-xl px-3.5 text-[13px] font-semibold transition-all ${
                   !showRecent
                     ? "bg-white text-[#1B2838] shadow-sm"
                     : "text-[#8E8E93]"
@@ -375,7 +495,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setShowRecent(true)}
-                className={`btn-press flex min-h-8 items-center gap-1.5 rounded-xl px-3 text-[12px] font-bold transition-all ${
+                className={`btn-press flex min-h-8 items-center gap-1.5 rounded-xl px-3.5 text-[13px] font-semibold transition-all ${
                   showRecent
                     ? "bg-white text-[#1B2838] shadow-sm"
                     : "text-[#8E8E93]"
@@ -388,9 +508,6 @@ export default function Home() {
                 최근 검색
               </button>
             </div>
-            <span className="shrink-0 rounded-full bg-[#EEF3F8] px-2 py-1 text-[11px] font-semibold text-[#607083]">
-              {quickAccessCount}개
-            </span>
           </div>
 
           {!showRecent && (
@@ -406,20 +523,20 @@ export default function Home() {
                     type="button"
                     disabled={!favorite}
                     onClick={() => favorite && handleFavoriteStationSelect(favorite.stationName)}
-                    className={`btn-press min-w-0 rounded-2xl border px-2.5 py-2 text-left transition-all disabled:cursor-default ${
+                    className={`btn-press min-w-0 rounded-2xl border px-3 py-2.5 text-left transition-all disabled:cursor-default ${
                       favorite
                         ? "border-[#ECECF1] bg-white text-[#1B2838]"
                         : "border-[#ECECF1] bg-[#F8F8FA] text-[#A0A0A7]"
                     }`}
                   >
-                    <span className="mb-1 flex items-center gap-1.5">
+                    <span className="mb-1.5 flex items-center gap-1.5">
                       <Icon
-                        size={14}
+                        size={15}
                         style={{ color: favorite ? color : "#A0A0A7" }}
                       />
-                      <span className="text-[11px] font-bold">{label}</span>
+                      <span className="text-[13px] font-semibold">{label}</span>
                     </span>
-                    <span className="block truncate text-[12px] font-bold">
+                    <span className="block truncate text-[13px] font-semibold leading-snug">
                       {favorite?.stationName ?? "미설정"}
                     </span>
                   </button>
@@ -428,32 +545,41 @@ export default function Home() {
             </div>
           )}
 
-          {/* Route list */}
+          {showRecent ? (
+            <div className="flex min-h-[96px] items-center justify-center rounded-2xl border border-dashed border-[#D7D9DF] bg-[#F8F8FA] px-4 py-5 text-center">
+              <span className="min-w-0">
+                <span className="block text-[14px] font-bold text-[#1B2838]">
+                  최근 검색
+                </span>
+                <span className="mt-1 block text-[13px] font-semibold text-[#8E8E93]">
+                  추후 구현 예정입니다
+                </span>
+              </span>
+            </div>
+          ) : (
           <div className="max-h-[128px] overflow-y-auto divide-y divide-[#F0F0F2]">
-            {favoriteItemCount === 0 && !showRecent ? (
+            {favoriteItemCount === 0 ? (
               <div className="flex min-h-[72px] items-center gap-3 py-3">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#FFF7D9]">
                   <Star size={15} className="text-[#C8A218]" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-bold text-[#1B2838]">
+                  <span className="block text-[14px] font-semibold text-[#1B2838]">
                     저장된 즐겨찾기가 없습니다
                   </span>
-                  <span className="mt-0.5 block text-[11px] font-medium text-[#8E8E93]">
+                  <span className="mt-1 block text-[12px] font-medium leading-snug text-[#8E8E93]">
                     역 상세에서 자주 가는 역을 설정하거나 경로 상세에서 별을 누르세요
                   </span>
                 </span>
               </div>
-            ) : quickRoutes.length === 0 && !showRecent ? null : (
+            ) : quickRoutes.length === 0 ? null : (
               quickRoutes.map((route, idx) => {
                 const isFavoriteItem = "id" in route;
                 const routeVia = isFavoriteItem ? route.via : "";
                 const routeKey = isFavoriteItem ? route.id : String(idx);
                 const routeMeta =
-                  !showRecent && isFavoriteItem && typeof route.transferCount === "number"
+                  isFavoriteItem && typeof route.transferCount === "number"
                     ? `즐겨찾기 경로 · 환승 ${route.transferCount}회`
-                    : showRecent
-                    ? "최근 검색 경로"
                     : "즐겨찾기 경로";
 
                 return (
@@ -464,15 +590,9 @@ export default function Home() {
                       onClick={() => setLocation(buildRouteResultPath(route.from, route.to, routeVia))}
                     >
                       <span
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                          showRecent ? "bg-[#EBF4FF]" : "bg-[#FFF7D9]"
-                        }`}
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#FFF7D9]"
                       >
-                        {showRecent ? (
-                          <Clock size={15} className="text-[#4A90D9]" />
-                        ) : (
-                          <Star size={15} className="text-[#C8A218]" fill="#C8A218" />
-                        )}
+                        <Star size={15} className="text-[#C8A218]" fill="#C8A218" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex min-w-0 items-center gap-1.5">
@@ -520,7 +640,10 @@ export default function Home() {
                 );
               }))}
           </div>
-        </div>
+          )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
   );

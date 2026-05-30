@@ -71,7 +71,7 @@ export default function TransferMiniSheet({
     };
   }, []);
 
-  const handleDragPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+  const handleDragPointerDown = (event: PointerEvent<HTMLElement>) => {
     if (event.pointerType === "touch") {
       isTouchDraggingRef.current = true;
     }
@@ -86,6 +86,15 @@ export default function TransferMiniSheet({
 
     const target = event.target as HTMLElement;
     if (target.closest("button")) return;
+    onToggleExpand();
+  };
+
+  const handleToggleButtonClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
     onToggleExpand();
   };
 
@@ -136,23 +145,30 @@ export default function TransferMiniSheet({
       }}
       aria-label="탑승 안내 하단 패널"
     >
-      {topSlot && (
-        <div
-          ref={dragHandleRef}
-          className="cursor-grab touch-none overscroll-contain bg-[#F8F9FB] active:cursor-grabbing"
-          style={{ touchAction: "none", WebkitUserSelect: "none" }}
-          onPointerDown={handleDragPointerDown}
-          onPointerUp={() => {
-            isTouchDraggingRef.current = false;
-          }}
-          onPointerCancel={() => {
-            isTouchDraggingRef.current = false;
-          }}
-          onClick={handleTopSlotClick}
+      <div
+        ref={dragHandleRef}
+        className="relative cursor-grab touch-none overscroll-contain bg-[#F8F9FB] active:cursor-grabbing"
+        style={{ touchAction: "none", WebkitUserSelect: "none" }}
+        onPointerDown={handleDragPointerDown}
+        onPointerUp={() => {
+          isTouchDraggingRef.current = false;
+        }}
+        onPointerCancel={() => {
+          isTouchDraggingRef.current = false;
+        }}
+        onClick={handleTopSlotClick}
+      >
+        <button
+          type="button"
+          onClick={handleToggleButtonClick}
+          className="btn-press absolute inset-x-0 top-0 z-10 flex w-full items-center justify-center py-1"
+          aria-label={expanded ? "탑승 안내 패널 접기" : "탑승 안내 패널 펼치기"}
+          aria-expanded={expanded}
         >
-          {topSlot}
-        </div>
-      )}
+          <span className="sheet-handle !my-0" />
+        </button>
+        {topSlot ?? <div className="h-6" />}
+      </div>
 
       <AnimatePresence initial={false}>
         {expanded && (detailsSlot || children) && (

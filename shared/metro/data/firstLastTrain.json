@@ -1,0 +1,132 @@
+{
+  "_note": "노선별 평일/주말 첫차·막차 baseline. 서울교통공사 공식 시간표를 검색 기반으로 정리한 평균치. 분기·지선 등 일부 패턴은 평균으로 단순화. 종착역(idx 0 또는 lastIdx)에서 출발하는 시각 기준.",
+  "_disclaimer": "참고용. 정확한 시간은 각 역 현장 안내 또는 서울교통공사 공식 자료 참고",
+  "lines": {
+    "1": {
+      "name": "1호선",
+      "minPerStation": 2.5,
+      "weekday": { "downFirst": "05:00", "downLast": "23:00", "upFirst": "05:00", "upLast": "23:00" },
+      "weekend": { "downFirst": "05:20", "downLast": "23:00", "upFirst": "05:20", "upLast": "23:00" }
+    },
+    "2": {
+      "name": "2호선",
+      "minPerStation": 2.0,
+      "weekday": { "downFirst": "05:30", "downLast": "00:05", "upFirst": "05:30", "upLast": "00:20" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:50", "upFirst": "05:30", "upLast": "00:05" }
+    },
+    "3": {
+      "name": "3호선",
+      "minPerStation": 2.5,
+      "weekday": { "downFirst": "05:30", "downLast": "23:30", "upFirst": "05:30", "upLast": "23:30" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:30", "upFirst": "05:30", "upLast": "23:30" }
+    },
+    "4": {
+      "name": "4호선",
+      "minPerStation": 2.5,
+      "weekday": { "downFirst": "05:30", "downLast": "23:25", "upFirst": "05:30", "upLast": "23:40" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:15", "upFirst": "05:30", "upLast": "23:30" }
+    },
+    "5": {
+      "name": "5호선",
+      "minPerStation": 2.5,
+      "weekday": { "downFirst": "05:30", "downLast": "23:35", "upFirst": "05:30", "upLast": "23:30" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:30", "upFirst": "05:30", "upLast": "23:30" }
+    },
+    "6": {
+      "name": "6호선",
+      "minPerStation": 2.0,
+      "weekday": { "downFirst": "05:30", "downLast": "23:25", "upFirst": "05:30", "upLast": "23:30" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:30", "upFirst": "05:30", "upLast": "23:30" }
+    },
+    "7": {
+      "name": "7호선",
+      "minPerStation": 2.5,
+      "weekday": { "downFirst": "05:30", "downLast": "23:25", "upFirst": "05:30", "upLast": "23:25" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:20", "upFirst": "05:30", "upLast": "23:20" }
+    },
+    "8": {
+      "name": "8호선",
+      "minPerStation": 2.5,
+      "weekday": { "downFirst": "05:35", "downLast": "23:30", "upFirst": "05:35", "upLast": "23:30" },
+      "weekend": { "downFirst": "05:35", "downLast": "23:30", "upFirst": "05:35", "upLast": "23:30" }
+    },
+    "9": {
+      "name": "9호선",
+      "minPerStation": 2.0,
+      "weekday": { "downFirst": "05:30", "downLast": "23:25", "upFirst": "05:30", "upLast": "23:50" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:25", "upFirst": "05:30", "upLast": "23:50" }
+    },
+    "gyeongui": {
+      "name": "경의중앙선",
+      "minPerStation": 3.0,
+      "weekday": { "downFirst": "05:00", "downLast": "22:50", "upFirst": "05:00", "upLast": "23:30" },
+      "weekend": { "downFirst": "05:30", "downLast": "22:50", "upFirst": "05:30", "upLast": "23:30" }
+    },
+    "airport": {
+      "name": "공항철도",
+      "minPerStation": 4.0,
+      "weekday": { "downFirst": "05:20", "downLast": "23:50", "upFirst": "05:18", "upLast": "23:39" },
+      "weekend": { "downFirst": "05:20", "downLast": "23:50", "upFirst": "05:18", "upLast": "23:39" }
+    },
+    "shinbundang": {
+      "name": "신분당선",
+      "minPerStation": 2.5,
+      "weekday": { "downFirst": "05:30", "downLast": "00:10", "upFirst": "05:30", "upLast": "23:30" },
+      "weekend": { "downFirst": "05:30", "downLast": "00:00", "upFirst": "05:30", "upLast": "23:30" }
+    },
+    "gyeongchun": {
+      "name": "경춘선",
+      "minPerStation": 3.5,
+      "weekday": { "downFirst": "05:10", "downLast": "22:30", "upFirst": "05:10", "upLast": "22:50" },
+      "weekend": { "downFirst": "05:30", "downLast": "22:30", "upFirst": "05:30", "upLast": "22:50" }
+    },
+    "suinbundang": {
+      "name": "수인분당선",
+      "minPerStation": 2.5,
+      "weekday": { "downFirst": "05:20", "downLast": "23:10", "upFirst": "05:20", "upLast": "23:10" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:00", "upFirst": "05:30", "upLast": "23:00" }
+    },
+    "ui": {
+      "name": "우이신설선",
+      "minPerStation": 2.0,
+      "weekday": { "downFirst": "05:30", "downLast": "23:50", "upFirst": "05:30", "upLast": "23:50" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:30", "upFirst": "05:30", "upLast": "23:30" }
+    },
+    "incheon1": {
+      "name": "인천1호선",
+      "minPerStation": 2.5,
+      "weekday": { "downFirst": "05:30", "downLast": "23:35", "upFirst": "05:30", "upLast": "23:35" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:30", "upFirst": "05:30", "upLast": "23:30" }
+    },
+    "incheon2": {
+      "name": "인천2호선",
+      "minPerStation": 2.5,
+      "weekday": { "downFirst": "05:30", "downLast": "23:30", "upFirst": "05:30", "upLast": "23:30" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:20", "upFirst": "05:30", "upLast": "23:20" }
+    },
+    "gimpo": {
+      "name": "김포골드라인",
+      "minPerStation": 2.0,
+      "weekday": { "downFirst": "05:30", "downLast": "23:30", "upFirst": "05:30", "upLast": "23:30" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:30", "upFirst": "05:30", "upLast": "23:30" }
+    },
+    "seohaeline": {
+      "name": "서해선",
+      "minPerStation": 3.0,
+      "weekday": { "downFirst": "05:30", "downLast": "23:00", "upFirst": "05:30", "upLast": "23:00" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:00", "upFirst": "05:30", "upLast": "23:00" }
+    },
+    "sinlim": {
+      "name": "신림선",
+      "minPerStation": 2.0,
+      "weekday": { "downFirst": "05:30", "downLast": "23:50", "upFirst": "05:30", "upLast": "23:50" },
+      "weekend": { "downFirst": "05:30", "downLast": "23:30", "upFirst": "05:30", "upLast": "23:30" }
+    },
+    "gtxa": {
+      "name": "GTX-A",
+      "minPerStation": 5.0,
+      "weekday": { "downFirst": "05:30", "downLast": "00:00", "upFirst": "05:30", "upLast": "00:00" },
+      "weekend": { "downFirst": "06:00", "downLast": "00:00", "upFirst": "06:00", "upLast": "00:00" }
+    }
+  }
+}

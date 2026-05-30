@@ -3,8 +3,16 @@
  * - 배경은 원본 PDF에서 추출한 공식 PNG를 그대로 사용한다.
  * - 클릭 영역은 같은 PNG 픽셀 좌표계의 역 마커 위에 투명하게 얹는다.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent, PointerEvent, TouchEvent, WheelEvent } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { ForwardedRef, MouseEvent, PointerEvent, TouchEvent, WheelEvent } from "react";
 import {
   Briefcase,
   Check,
@@ -22,8 +30,8 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
-import metroData from "@/data/metroData.json";
-import officialMapCoords from "@/data/officialMapCoords.json";
+import metroData from "@shared/metro/data/metroData.json";
+import officialMapCoords from "@shared/metro/data/officialMapCoords.json";
 import { getRealtimeArrivals } from "@/lib/realtimeApi";
 import type { ArrivalInfo } from "@/lib/realtimeApi";
 import type { Station } from "@/lib/pathfinder";
@@ -119,6 +127,10 @@ export interface MapSelections {
   to?: string;
 }
 
+export interface MetroMapHandle {
+  focusStation: (stationName: string, options?: { openMenu?: boolean }) => boolean;
+}
+
 function clampViewBox(box: ViewBox): ViewBox {
   const w = Math.max(MIN_VIEWBOX_SIZE, Math.min(MAP_BOUNDS.w, box.w));
   const h = Math.max(MIN_VIEWBOX_SIZE, Math.min(MAP_BOUNDS.h, box.h));
@@ -150,7 +162,7 @@ function getRenderedViewport(rect: DOMRect, viewBox: ViewBox) {
   };
 }
 
-export default function MetroMap({
+function MetroMap({
   onStationSelect,
   onStationRoleSelect,
   selectedLines,
@@ -162,9 +174,10 @@ export default function MetroMap({
   selectedLines?: string[];
   highlightedStation?: string;
   selections?: MapSelections;
-}) {
+}, ref: ForwardedRef<MetroMapHandle>) {
   const [, setLocation] = useLocation();
   const containerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const [viewBox, setViewBox] = useState<ViewBox>(INITIAL_VIEW_BOX);
   const [isDragging, setIsDragging] = useState(false);
@@ -233,20 +246,36 @@ export default function MetroMap({
     return Array.from(seen.values());
   }, [stations]);
 
-  useEffect(() => {
-    if (!highlightedStation) return;
-    const station = uniqueStations.find(item => item.name === highlightedStation);
-    if (!station) return;
-
+  const focusStationOnMap = useCallback((station: MapStation, openMenu = false) => {
     const nextSize = 620;
     setSelectedStation(station.name);
+    setHoveredStation(null);
     setViewBox(clampViewBox({
       x: station.x - nextSize / 2,
       y: station.y - nextSize / 2,
       w: nextSize,
       h: nextSize,
     }));
-  }, [highlightedStation, uniqueStations]);
+    setStationMenu(openMenu ? station : null);
+    if (!openMenu) setShowStationFavoritePicker(false);
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    focusStation: (stationName, options) => {
+      const station = uniqueStations.find(item => item.name === stationName);
+      if (!station) return false;
+      focusStationOnMap(station, options?.openMenu ?? false);
+      return true;
+    },
+  }), [focusStationOnMap, uniqueStations]);
+
+  useEffect(() => {
+    if (!highlightedStation) return;
+    const station = uniqueStations.find(item => item.name === highlightedStation);
+    if (!station) return;
+
+    focusStationOnMap(station);
+  }, [focusStationOnMap, highlightedStation, uniqueStations]);
 
   const refreshStationFavorites = useCallback(() => {
     setStationFavoriteMap(getStationFavoriteMap());
@@ -266,6 +295,12 @@ export default function MetroMap({
     if (!stationMenu) {
       setShowStationFavoritePicker(false);
     }
+  }, [stationMenu]);
+
+  useEffect(() => {
+    if (!stationMenu) return;
+    const frame = requestAnimationFrame(() => menuRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
   }, [stationMenu]);
 
   // 메뉴 열릴 때 실시간 도착정보 조회 (방향별로 최대 2개씩)
@@ -653,10 +688,12 @@ export default function MetroMap({
 
       {stationMenu && stationMenuPosition && (
         <div
+          ref={menuRef}
           className="absolute z-30 w-60 rounded-2xl border border-[#E5E5EA] bg-white/95 p-2 shadow-[0_14px_40px_rgba(27,40,56,0.22)] backdrop-blur-md"
           style={stationMenuPosition}
           role="menu"
           aria-label={`${stationMenu.name}역 선택 메뉴`}
+          tabIndex={-1}
         >
           {/* Header */}
           <div className="flex items-start gap-2 px-1.5 py-1.5">
@@ -840,3 +877,5 @@ export default function MetroMap({
     </div>
   );
 }
+
+export default forwardRef(MetroMap);

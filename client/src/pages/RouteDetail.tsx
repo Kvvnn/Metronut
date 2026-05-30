@@ -17,9 +17,10 @@ import {
   getLineInfo,
   formatTransferDuration,
   isLongTransferSegment,
+  involvesScheduledLine,
 } from "@/lib/pathfinder";
 import type { Route, RouteSegment } from "@/lib/pathfinder";
-import { OFFICIAL_FAST_TRANSFERS } from "@/data/officialFastTransfers";
+import { OFFICIAL_FAST_TRANSFERS } from "@shared/metro/officialFastTransfers";
 import {
   findFastTransferInfo,
   formatFastTransferInfo,
@@ -93,7 +94,13 @@ export default function RouteDetail() {
 
   useEffect(() => {
     if (from && to) {
-      const routes = via ? findRoutesVia(from, via, to) : findRoutes(from, to);
+      // RouteResult와 동일한 탐색을 써야 인덱스가 일치한다.
+      const routes =
+        !via && involvesScheduledLine(from, to)
+          ? findRoutes(from, to, { departAt: new Date() })
+          : via
+            ? findRoutesVia(from, via, to)
+            : findRoutes(from, to);
       if (routes[routeIdx]) {
         setRoute(routes[routeIdx]);
       }
@@ -360,6 +367,11 @@ function RideSegment({
                 style={{ backgroundColor: segmentColor }}
               />
               {segment.pattern.label} 열차 탑승
+              {segment.boardWaitSeconds != null && segment.boardWaitSeconds > 0 && (
+                <span className="text-[12px] font-medium text-[#8E8E93]">
+                  · 약 {Math.max(1, Math.round(segment.boardWaitSeconds / 60))}분 대기
+                </span>
+              )}
             </p>
           )}
         </div>

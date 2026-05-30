@@ -26,6 +26,7 @@ import { getRealtimeArrivals, checkApiKeyStatus } from "@/lib/realtimeApi";
 import type { ArrivalInfo } from "@/lib/realtimeApi";
 import { getFirstLastTrain } from "@/lib/firstLastTrain";
 import type { DayType } from "@/lib/firstLastTrain";
+import { getUseSimulatedTrainData } from "@/lib/simulationSettings";
 import { toast } from "sonner";
 import {
   getStationFavoriteKindsForStation,
@@ -79,7 +80,7 @@ export default function StationInfo() {
 
   useEffect(() => {
     loadArrivals();
-    checkApiKeyStatus().then(hasKey => setIsSimulated(!hasKey));
+    checkApiKeyStatus().then(hasKey => setIsSimulated(getUseSimulatedTrainData() || !hasKey));
   }, [decodedName, selectedLine, stations]);
 
   useEffect(() => {

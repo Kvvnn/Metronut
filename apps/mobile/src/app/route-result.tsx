@@ -1,0 +1,304 @@
+import { Link, Stack, useLocalSearchParams } from 'expo-router';
+import type { Href } from 'expo-router';
+import { useMemo } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+
+import {
+  calculateArrivalTime,
+  findRoutes,
+  findRoutesVia,
+  getLineInfo,
+  isLongTransferSegment,
+  type Route,
+} from '@shared/metro/pathfinder';
+import { buildServiceErrorCopy, getRouteServiceError } from '@shared/metro/routeServiceWindow';
+
+import { colors, radii, spacing, typography } from '@/lib/theme';
+
+const routeLabels = [
+  { label: '빠른 경로', color: colors.blue },
+  { label: '편한 경로', color: colors.green },
+  { label: '도보 적은 경로', color: '#C2681B' },
+  { label: '환승 대안', color: '#6F58D9' },
+  { label: '우회 경로', color: colors.muted },
+];
+
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] ?? '' : value ?? '';
+}
+
+function routeDetailPath(routeIndex: number, from: string, to: string, via: string) {
+  const params = [
+    ['from', from],
+    ['to', to],
+    ...(via ? [['via', via]] : []),
+  ];
+  const query = params
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+  return `/route-detail/${routeIndex}?${query}`;
+}
+
+function LineBadge({ lineId }: { lineId: string }) {
+  const line = getLineInfo(lineId);
+  return (
+    <View style={[styles.lineBadge, { backgroundColor: line?.color ?? colors.muted }]}>
+      <Text style={styles.lineBadgeText}>{line?.shortName ?? lineId}</Text>
+    </View>
+  );
+}
+
+function RouteCard({
+  route,
+  index,
+  from,
+  to,
+  via,
+}: {
+  route: Route;
+  index: number;
+  from: string;
+  to: string;
+  via: string;
+}) {
+  const label = routeLabels[index] ?? routeLabels[routeLabels.length - 1];
+  const rideSegments = route.segments.filter((segment) => !segment.isTransfer);
+  const longTransferCount = route.segments.filter((segment) => segment.isTransfer && isLongTransferSegment(segment)).length;
+
+  return (
+    <Link href={routeDetailPath(index, from, to, via) as Href} asChild>
+      <Pressable style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
+        <View style={styles.cardMain}>
+          <Text style={[styles.cardLabel, { color: label.color }]}>{label.label}</Text>
+          <View style={styles.timeRow}>
+            <Text style={styles.timeText}>{route.totalTime}분</Text>
+            <Text style={styles.arrivalText}>도착 {calculateArrivalTime(route.totalTime)}</Text>
+          </View>
+
+          <View style={styles.badgeRow}>
+            {rideSegments.map((segment, segmentIndex) => (
+              <LineBadge key={`${segment.lineId}-${segmentIndex}`} lineId={segment.lineId} />
+            ))}
+          </View>
+
+          <View style={styles.metaRow}>
+            <Text style={styles.metaText}>환승 {route.transferCount}회</Text>
+            <Text style={styles.metaText}>{route.stationCount}개 역</Text>
+            <Text style={styles.metaText}>환승 이동 {route.walkTime}분</Text>
+          </View>
+
+          <View style={styles.bottomRow}>
+            {longTransferCount > 0 ? (
+              <Text style={styles.warningPill}>긴 환승 {longTransferCount}개</Text>
+            ) : (
+              <Text style={styles.softPill}>일반 환승</Text>
+            )}
+            <Text style={styles.fareText}>₩{route.fare.toLocaleString()}</Text>
+          </View>
+        </View>
+        <Text style={styles.chevron}>›</Text>
+      </Pressable>
+    </Link>
+  );
+}
+
+export default function RouteResultScreen() {
+  const params = useLocalSearchParams<{ from?: string; via?: string; to?: string }>();
+  const from = firstParam(params.from);
+  const via = firstParam(params.via);
+  const to = firstParam(params.to);
+
+  const { routes, serviceError } = useMemo(() => {
+    if (!from || !to) return { routes: [] as Route[], serviceError: null };
+
+    const found = via ? findRoutesVia(from, via, to) : findRoutes(from, to);
+    const now = new Date();
+    const available = found.filter((route) => !getRouteServiceError(route, now));
+    return {
+      routes: available,
+      serviceError: found.length > 0 && available.length === 0 ? getRouteServiceError(found[0], now) : null,
+    };
+  }, [from, to, via]);
+
+  const serviceErrorCopy = serviceError ? buildServiceErrorCopy(serviceError) : null;
+  const title = from && to ? `${from} → ${via ? `${via} → ` : ''}${to}` : '경로 후보';
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <Stack.Screen options={{ title: '경로 선택' }} />
+      <View style={styles.header}>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.body}>소요시간과 환승 부담을 비교해 이동할 경로를 고르세요.</Text>
+      </View>
+
+      {!from || !to ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>출발역과 도착역이 필요합니다</Text>
+          <Text style={styles.emptyBody}>홈에서 역을 선택한 뒤 다시 검색하세요.</Text>
+        </View>
+      ) : serviceErrorCopy ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>{serviceErrorCopy.title}</Text>
+          <Text style={styles.emptyBody}>{serviceErrorCopy.description}</Text>
+          <Text style={styles.emptyHint}>{serviceErrorCopy.hint}</Text>
+        </View>
+      ) : routes.length > 0 ? (
+        routes.map((route, index) => (
+          <RouteCard
+            key={`${route.totalTime}-${route.transferCount}-${index}`}
+            route={route}
+            index={index}
+            from={from}
+            to={to}
+            via={via}
+          />
+        ))
+      ) : (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>경로를 찾지 못했습니다</Text>
+          <Text style={styles.emptyBody}>역 이름을 다시 확인하거나 경유역을 제거해보세요.</Text>
+        </View>
+      )}
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    gap: spacing.md,
+    padding: spacing.lg,
+    paddingBottom: 40,
+  },
+  header: {
+    gap: spacing.xs,
+  },
+  title: {
+    ...typography.title,
+    color: colors.text,
+  },
+  body: {
+    ...typography.body,
+    color: colors.subtleText,
+  },
+  card: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.lg,
+  },
+  pressed: {
+    opacity: 0.74,
+  },
+  cardMain: {
+    flex: 1,
+    gap: spacing.sm,
+  },
+  cardLabel: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  timeRow: {
+    alignItems: 'baseline',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  timeText: {
+    color: colors.text,
+    fontSize: 32,
+    fontWeight: '900',
+  },
+  arrivalText: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+  },
+  lineBadge: {
+    alignItems: 'center',
+    borderRadius: radii.pill,
+    minWidth: 28,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  lineBadgeText: {
+    color: colors.surface,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  metaText: {
+    color: colors.subtleText,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  bottomRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  warningPill: {
+    backgroundColor: '#FFF1E7',
+    borderRadius: radii.pill,
+    color: '#A64E16',
+    fontSize: 12,
+    fontWeight: '900',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+  },
+  softPill: {
+    backgroundColor: '#E7F0EA',
+    borderRadius: radii.pill,
+    color: colors.green,
+    fontSize: 12,
+    fontWeight: '900',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+  },
+  fareText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  chevron: {
+    color: colors.muted,
+    fontSize: 36,
+    fontWeight: '300',
+  },
+  emptyCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.xs,
+    padding: spacing.lg,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  emptyBody: {
+    ...typography.body,
+    color: colors.subtleText,
+  },
+  emptyHint: {
+    ...typography.caption,
+    color: colors.muted,
+  },
+});

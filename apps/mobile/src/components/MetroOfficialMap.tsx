@@ -1,0 +1,670 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import type { Href } from 'expo-router';
+import { useMemo, useRef, useState } from 'react';
+import {
+  Image,
+  LayoutChangeEvent,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+
+import officialMapCoords from '@shared/metro/data/officialMapCoords.json';
+import metroData from '@shared/metro/data/metroData.json';
+import { getAllLines, getLineInfo, type Line, type Station } from '@shared/metro/pathfinder';
+
+import { impactHaptic, selectionHaptic, successHaptic, warningHaptic } from '@/lib/haptics';
+import { colors, radii, spacing, typography } from '@/lib/theme';
+
+const mapImage = require('../../assets/images/metro-official-map.png');
+
+type StationRole = 'from' | 'via' | 'to';
+
+interface OfficialMapCoords {
+  metadata: {
+    width: number;
+    height: number;
+  };
+  stations: Record<string, { x: number; y: number }>;
+}
+
+interface MapStation {
+  id: string;
+  name: string;
+  lineId: string;
+  x: number;
+  y: number;
+  transfers: string[];
+}
+
+interface MapTransform {
+  scale: number;
+  x: number;
+  y: number;
+}
+
+interface ViewportSize {
+  width: number;
+  height: number;
+}
+
+const officialMap = officialMapCoords as OfficialMapCoords;
+const MAP_WIDTH = officialMap.metadata.width;
+const MAP_HEIGHT = officialMap.metadata.height;
+const MIN_SCALE = 0.12;
+const MAX_SCALE = 1.2;
+const DEFAULT_VIEWPORT_HEIGHT = 430;
+
+const roleMeta: Record<StationRole, { label: string; color: string; icon: keyof typeof Ionicons.glyphMap }> = {
+  from: { label: '출발', color: colors.blue, icon: 'radio-button-on-outline' },
+  via: { label: '경유', color: colors.green, icon: 'add-circle-outline' },
+  to: { label: '도착', color: colors.red, icon: 'flag-outline' },
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function distanceBetweenTouches(touches: readonly { pageX: number; pageY: number }[]) {
+  if (touches.length < 2) return 0;
+  const [first, second] = touches;
+  return Math.hypot(first.pageX - second.pageX, first.pageY - second.pageY);
+}
+
+function buildRouteResultPath(from: string, to: string, via: string) {
+  const params = [
+    ['from', from],
+    ['to', to],
+    ['origin', 'mobile-map'],
+    ...(via ? [['via', via]] : []),
+  ];
+  const query = params
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+  return `/route-result?${query}` as Href;
+}
+
+function stationDetailPath(station: MapStation) {
+  return `/station/${encodeURIComponent(station.name)}?line=${encodeURIComponent(station.lineId)}` as Href;
+}
+
+function clampTransform(transform: MapTransform, viewport: ViewportSize): MapTransform {
+  if (viewport.width <= 0 || viewport.height <= 0) return transform;
+
+  const contentWidth = MAP_WIDTH * transform.scale;
+  const contentHeight = MAP_HEIGHT * transform.scale;
+  const minX = Math.min(0, viewport.width - contentWidth);
+  const minY = Math.min(0, viewport.height - contentHeight);
+  const maxX = contentWidth < viewport.width ? (viewport.width - contentWidth) / 2 : 0;
+  const maxY = contentHeight < viewport.height ? (viewport.height - contentHeight) / 2 : 0;
+
+  return {
+    scale: transform.scale,
+    x: contentWidth < viewport.width ? maxX : clamp(transform.x, minX, maxX),
+    y: contentHeight < viewport.height ? maxY : clamp(transform.y, minY, maxY),
+  };
+}
+
+function getUniqueMapStations(selectedLineId: string) {
+  const coordsById = officialMap.stations;
+  const seen = new Map<string, MapStation>();
+
+  (metroData.stations as Station[])
+    .filter((station) => !selectedLineId || station.lineId === selectedLineId)
+    .forEach((station) => {
+      const coords = coordsById[station.id];
+      if (!coords) return;
+
+      const candidate: MapStation = {
+        id: station.id,
+        name: station.name,
+        lineId: station.lineId,
+        x: coords.x,
+        y: coords.y,
+        transfers: station.transfers,
+      };
+      const existing = seen.get(station.name);
+      if (!existing || candidate.transfers.length > existing.transfers.length) {
+        seen.set(station.name, candidate);
+      }
+    });
+
+  return Array.from(seen.values());
+}
+
+function SelectedPill({
+  role,
+  value,
+  onClear,
+}: {
+  role: StationRole;
+  value: string;
+  onClear: () => void;
+}) {
+  const meta = roleMeta[role];
+
+  return (
+    <View style={[styles.selectionPill, { borderColor: meta.color }]}>
+      <Text style={[styles.selectionPillLabel, { color: meta.color }]}>{meta.label}</Text>
+      <Text style={styles.selectionPillValue} numberOfLines={1}>
+        {value}
+      </Text>
+      <Pressable accessibilityLabel={`${meta.label} 지우기`} onPress={onClear} hitSlop={8}>
+        <Ionicons name="close" size={14} color={colors.muted} />
+      </Pressable>
+    </View>
+  );
+}
+
+export function MetroOfficialMap() {
+  const router = useRouter();
+  const lines = useMemo(() => getAllLines(), []);
+  const [selectedLineId, setSelectedLineId] = useState('');
+  const [selectedStation, setSelectedStation] = useState<MapStation | null>(null);
+  const [from, setFrom] = useState('');
+  const [via, setVia] = useState('');
+  const [to, setTo] = useState('');
+  const [viewport, setViewport] = useState<ViewportSize>({ width: 0, height: DEFAULT_VIEWPORT_HEIGHT });
+  const [transform, setTransform] = useState<MapTransform>({ scale: 0.24, x: -132, y: -92 });
+  const gestureRef = useRef({
+    x: 0,
+    y: 0,
+    scale: 0.24,
+    pinchDistance: 0,
+  });
+
+  const mapStations = useMemo(() => getUniqueMapStations(selectedLineId), [selectedLineId]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (event) => {
+          gestureRef.current = {
+            x: transform.x,
+            y: transform.y,
+            scale: transform.scale,
+            pinchDistance: distanceBetweenTouches(event.nativeEvent.touches),
+          };
+        },
+        onPanResponderMove: (event, gestureState) => {
+          const touches = event.nativeEvent.touches;
+          if (touches.length >= 2) {
+            const nextDistance = distanceBetweenTouches(touches);
+            const baseDistance = gestureRef.current.pinchDistance || nextDistance || 1;
+            const nextScale = clamp(gestureRef.current.scale * (nextDistance / baseDistance), MIN_SCALE, MAX_SCALE);
+            setTransform((current) => clampTransform({ ...current, scale: nextScale }, viewport));
+            return;
+          }
+
+          setTransform(
+            clampTransform(
+              {
+                scale: gestureRef.current.scale,
+                x: gestureRef.current.x + gestureState.dx,
+                y: gestureRef.current.y + gestureState.dy,
+              },
+              viewport,
+            ),
+          );
+        },
+      }),
+    [transform, viewport],
+  );
+
+  const handleLayout = (event: LayoutChangeEvent) => {
+    const width = event.nativeEvent.layout.width;
+    const height = event.nativeEvent.layout.height;
+    setViewport({ width, height });
+    setTransform((current) => clampTransform(current, { width, height }));
+  };
+
+  const handleZoom = (factor: number) => {
+    setTransform((current) =>
+      clampTransform(
+        {
+          ...current,
+          scale: clamp(current.scale * factor, MIN_SCALE, MAX_SCALE),
+        },
+        viewport,
+      ),
+    );
+  };
+
+  const handleReset = () => {
+    setTransform(clampTransform({ scale: 0.24, x: -132, y: -92 }, viewport));
+  };
+
+  const handleStationRole = (role: StationRole) => {
+    if (!selectedStation) return;
+
+    selectionHaptic();
+    if (role === 'from') {
+      setFrom(selectedStation.name);
+      if (to === selectedStation.name) setTo('');
+      if (via === selectedStation.name) setVia('');
+    }
+    if (role === 'via') {
+      setVia(selectedStation.name);
+      if (from === selectedStation.name) setFrom('');
+      if (to === selectedStation.name) setTo('');
+    }
+    if (role === 'to') {
+      setTo(selectedStation.name);
+      if (from === selectedStation.name) setFrom('');
+      if (via === selectedStation.name) setVia('');
+    }
+  };
+
+  const handleSearch = () => {
+    if (!from || !to) {
+      warningHaptic();
+      return;
+    }
+    successHaptic();
+    router.push(buildRouteResultPath(from, to, via));
+  };
+
+  const contentWidth = MAP_WIDTH * transform.scale;
+  const contentHeight = MAP_HEIGHT * transform.scale;
+  const selectedLine = selectedLineId ? getLineInfo(selectedLineId) : null;
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.searchStrip}>
+        <View style={styles.selectionRow}>
+          {from ? <SelectedPill role="from" value={from} onClear={() => setFrom('')} /> : null}
+          {via ? <SelectedPill role="via" value={via} onClear={() => setVia('')} /> : null}
+          {to ? <SelectedPill role="to" value={to} onClear={() => setTo('')} /> : null}
+          {!from && !to ? <Text style={styles.selectionHint}>출발·도착 미지정</Text> : null}
+        </View>
+        <Pressable
+          disabled={!from || !to}
+          onPress={handleSearch}
+          style={({ pressed }) => [
+            styles.searchButton,
+            (!from || !to) && styles.searchButtonDisabled,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={styles.searchButtonText}>경로 검색</Text>
+        </Pressable>
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.lineFilters}>
+        <Pressable
+          onPress={() => {
+            selectionHaptic();
+            setSelectedLineId('');
+          }}
+          style={[styles.lineFilterChip, !selectedLineId && styles.lineFilterChipActive]}
+        >
+          <Text style={[styles.lineFilterText, !selectedLineId && styles.lineFilterTextActive]}>전체</Text>
+        </Pressable>
+        {lines.map((line: Line) => {
+          const selected = selectedLineId === line.id;
+          return (
+            <Pressable
+              key={line.id}
+              onPress={() => {
+                selectionHaptic();
+                setSelectedLineId(selected ? '' : line.id);
+              }}
+              style={[
+                styles.lineFilterChip,
+                selected && { backgroundColor: line.color, borderColor: line.color },
+              ]}
+            >
+              <Text style={[styles.lineFilterText, selected && styles.lineFilterTextActive]}>{line.shortName}</Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      <View style={styles.mapShell}>
+        <View style={styles.mapViewport} onLayout={handleLayout} {...panResponder.panHandlers}>
+          <View
+            style={[
+              styles.mapContent,
+              {
+                width: contentWidth,
+                height: contentHeight,
+                transform: [{ translateX: transform.x }, { translateY: transform.y }],
+              },
+            ]}
+          >
+            <Image source={mapImage} style={{ width: contentWidth, height: contentHeight }} resizeMode="stretch" />
+            {mapStations.map((station) => {
+              const line = getLineInfo(station.lineId);
+              const isSelected = selectedStation?.name === station.name;
+              const role: StationRole | null =
+                from === station.name ? 'from' : via === station.name ? 'via' : to === station.name ? 'to' : null;
+              const markerColor = role ? roleMeta[role].color : line?.color ?? colors.green;
+              const markerSize = isSelected ? 30 : role ? 26 : 18;
+
+              return (
+                <Pressable
+                  key={station.id}
+                  accessibilityLabel={`${station.name}역 선택`}
+                  onPress={() => {
+                    impactHaptic();
+                    setSelectedStation(station);
+                  }}
+                  style={[
+                    styles.stationMarker,
+                    {
+                      backgroundColor: markerColor,
+                      height: markerSize,
+                      left: station.x * transform.scale - markerSize / 2,
+                      top: station.y * transform.scale - markerSize / 2,
+                      width: markerSize,
+                    },
+                    isSelected && styles.stationMarkerSelected,
+                  ]}
+                >
+                  {role ? <Text style={styles.stationRoleText}>{roleMeta[role].label[0]}</Text> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.mapControls}>
+          <Pressable
+            onPress={() => {
+              selectionHaptic();
+              handleZoom(1.28);
+            }}
+            style={({ pressed }) => [styles.mapControlButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="add" size={18} color={colors.text} />
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              selectionHaptic();
+              handleZoom(0.78);
+            }}
+            style={({ pressed }) => [styles.mapControlButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="remove" size={18} color={colors.text} />
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              selectionHaptic();
+              handleReset();
+            }}
+            style={({ pressed }) => [styles.mapControlButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="expand-outline" size={17} color={colors.text} />
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={styles.mapMetaRow}>
+        <Text style={styles.mapMetaText}>
+          {selectedLine ? `${selectedLine.name} ${mapStations.length}개 역 표시` : `전체 ${mapStations.length}개 역 표시`}
+        </Text>
+        <Text style={styles.mapMetaText}>공식 지도</Text>
+      </View>
+
+      {selectedStation ? (
+        <View style={styles.stationSheet}>
+          <View style={styles.stationSheetHeader}>
+            <View style={styles.stationTitleWrap}>
+              <Text style={styles.stationSheetTitle}>{selectedStation.name}역</Text>
+              <Text style={styles.stationSheetSub}>
+                {getLineInfo(selectedStation.lineId)?.name ?? selectedStation.lineId}
+                {selectedStation.transfers.length > 0 ? ` · 환승 ${selectedStation.transfers.length}개` : ''}
+              </Text>
+            </View>
+            <Pressable onPress={() => setSelectedStation(null)} hitSlop={8}>
+              <Ionicons name="close" size={20} color={colors.muted} />
+            </Pressable>
+          </View>
+
+          <View style={styles.roleButtonRow}>
+            {(['from', 'via', 'to'] as StationRole[]).map((role) => {
+              const meta = roleMeta[role];
+              return (
+                <Pressable
+                  key={role}
+                  onPress={() => handleStationRole(role)}
+                  style={({ pressed }) => [styles.roleButton, { borderColor: meta.color }, pressed && styles.pressed]}
+                >
+                  <Ionicons name={meta.icon} size={16} color={meta.color} />
+                  <Text style={[styles.roleButtonText, { color: meta.color }]}>{meta.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Pressable
+            onPress={() => {
+              successHaptic();
+              router.push(stationDetailPath(selectedStation));
+            }}
+            style={({ pressed }) => [styles.stationDetailButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.stationDetailButtonText}>역 상세 보기</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.surface} />
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    gap: spacing.md,
+  },
+  searchStrip: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  selectionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    minHeight: 34,
+  },
+  selectionHint: {
+    ...typography.caption,
+    color: colors.subtleText,
+    fontWeight: '800',
+  },
+  selectionPill: {
+    alignItems: 'center',
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 5,
+    maxWidth: '100%',
+    minHeight: 32,
+    paddingHorizontal: spacing.sm,
+  },
+  selectionPillLabel: {
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  selectionPillValue: {
+    color: colors.text,
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: '900',
+    maxWidth: 104,
+  },
+  searchButton: {
+    alignItems: 'center',
+    backgroundColor: colors.text,
+    borderRadius: radii.sm,
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  searchButtonDisabled: {
+    backgroundColor: '#A9A49B',
+  },
+  searchButtonText: {
+    color: colors.surface,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  lineFilters: {
+    gap: spacing.xs,
+    paddingRight: spacing.lg,
+  },
+  lineFilterChip: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 36,
+    minWidth: 44,
+    paddingHorizontal: spacing.sm,
+  },
+  lineFilterChipActive: {
+    backgroundColor: colors.text,
+    borderColor: colors.text,
+  },
+  lineFilterText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  lineFilterTextActive: {
+    color: colors.surface,
+  },
+  mapShell: {
+    backgroundColor: '#EFE9DC',
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    height: DEFAULT_VIEWPORT_HEIGHT,
+    overflow: 'hidden',
+  },
+  mapViewport: {
+    flex: 1,
+    overflow: 'hidden',
+  },
+  mapContent: {
+    position: 'absolute',
+  },
+  stationMarker: {
+    alignItems: 'center',
+    borderColor: colors.surface,
+    borderRadius: radii.pill,
+    borderWidth: 2,
+    justifyContent: 'center',
+    position: 'absolute',
+  },
+  stationMarkerSelected: {
+    borderColor: colors.text,
+    borderWidth: 3,
+  },
+  stationRoleText: {
+    color: colors.surface,
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  mapControls: {
+    gap: spacing.xs,
+    position: 'absolute',
+    right: spacing.sm,
+    top: spacing.sm,
+  },
+  mapControlButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  mapMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  mapMetaText: {
+    color: colors.muted,
+    flexShrink: 1,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  stationSheet: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  stationSheetHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  stationTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  stationSheetTitle: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  stationSheetSub: {
+    color: colors.subtleText,
+    fontSize: 13,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  roleButtonRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  roleButton: {
+    alignItems: 'center',
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 4,
+    justifyContent: 'center',
+    minHeight: 42,
+  },
+  roleButtonText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  stationDetailButton: {
+    alignItems: 'center',
+    backgroundColor: colors.text,
+    borderRadius: radii.sm,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    minHeight: 46,
+  },
+  stationDetailButtonText: {
+    color: colors.surface,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  pressed: {
+    opacity: 0.72,
+  },
+});

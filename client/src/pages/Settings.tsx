@@ -7,18 +7,32 @@
  * - 앱 정보
  */
 import { useState } from "react";
-import { Bell, Route, Info, ChevronRight, Moon, Vibrate, Globe, Trash2, Database, Shield } from "lucide-react";
+import { Bell, Route, Info, ChevronRight, Moon, Vibrate, Globe, Trash2, Database, Shield, Train } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useTheme } from "@/contexts/ThemeContext";
+import {
+  getUseSimulatedTrainData,
+  setUseSimulatedTrainData,
+  USE_SIMULATED_TRAIN_DATA_KEY,
+} from "@/lib/simulationSettings";
 
 export default function Settings() {
   const [alarmSound, setAlarmSound] = useState(true);
   const [alarmVibrate, setAlarmVibrate] = useState(true);
   const [alarmBefore, setAlarmBefore] = useState("1");
   const [preferRoute, setPreferRoute] = useState("fastest");
+  const [useSimulatedTrainData, setUseSimulatedTrainDataState] = useState(() =>
+    getUseSimulatedTrainData(),
+  );
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === "dark";
+
+  const handleSimulatedTrainDataChange = (enabled: boolean) => {
+    setUseSimulatedTrainDataState(enabled);
+    setUseSimulatedTrainData(enabled);
+    toast(enabled ? "시뮬레이션 열차 데이터를 사용합니다" : "실시간 열차 데이터를 사용합니다");
+  };
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -140,6 +154,37 @@ export default function Settings() {
         </div>
       </motion.section>
 
+      {/* Data Source */}
+      <motion.section
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.2, ease: [0.23, 1, 0.32, 1] }}
+        className="px-4 mt-6"
+      >
+        <h3 className="text-[13px] font-semibold text-[#8E8E93] uppercase tracking-wider mb-2 px-1">
+          데이터 소스
+        </h3>
+        <div className="ios-card divide-y divide-[#F0F0F2]">
+          <div className="flex items-center justify-between gap-3 px-4 py-3.5">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-[#EBF4FF] flex items-center justify-center">
+                <Train size={16} className="text-[#4A90D9]" />
+              </div>
+              <div className="min-w-0 text-left">
+                <span className="block text-[15px] text-[#1B2838]">시뮬레이션 열차 데이터</span>
+                <span className="mt-0.5 block text-[12px] leading-4 text-[#8E8E93]">
+                  실시간 API 대신 가짜 열차 위치를 표시합니다
+                </span>
+              </div>
+            </div>
+            <ToggleSwitch
+              checked={useSimulatedTrainData}
+              onChange={handleSimulatedTrainDataChange}
+            />
+          </div>
+        </div>
+      </motion.section>
+
       {/* 2차 기능 더미 - 일반 설정 */}
       <motion.section
         initial={{ opacity: 0, y: 20 }}
@@ -213,9 +258,13 @@ export default function Settings() {
               // API 키는 보존하고 검색 기록만 삭제
               const apiKey = localStorage.getItem("metro_api_key");
               const prefs = localStorage.getItem("metro_preferences");
+              const useSimulatedData = localStorage.getItem(USE_SIMULATED_TRAIN_DATA_KEY);
               localStorage.clear();
               if (apiKey) localStorage.setItem("metro_api_key", apiKey);
               if (prefs) localStorage.setItem("metro_preferences", prefs);
+              if (useSimulatedData) {
+                localStorage.setItem(USE_SIMULATED_TRAIN_DATA_KEY, useSimulatedData);
+              }
               toast.success("검색 기록이 초기화되었습니다");
             }}
           >

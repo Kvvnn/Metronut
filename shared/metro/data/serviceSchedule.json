@@ -1,0 +1,100 @@
+{
+  "_note": "노선별 운행계통(행선지) 스케줄. 각 패턴은 방향(up=index 감소/당고개 방면, down=index 증가/오이도 방면)과 운행구간(coverage: 본선 index 범위), 그리고 origin(출발 종착역) 기준 출발 시각표를 가진다. 특정 역의 통과/도착 시각은 origin에서 minPerStation×역수만큼 더해 추정한다.",
+  "_disclaimer": "참고용. 평일/주말 막차 종착 변이는 서울교통공사/코레일 역별 공식 시간표(사당·오이도 실측) 기반으로 정리한 평균치이며, 정확한 시각은 현장 안내를 따른다. 분기·급행·임시열차는 단순화.",
+  "_sources": [
+    "metro-time-info.appspot.com 사당역/오이도역 4호선 첫차·막차",
+    "ko.wikipedia.org 수도권 전철 4호선"
+  ],
+  "lines": {
+    "4": {
+      "name": "4호선",
+      "minPerStation": 2.65,
+      "stationIndex": {
+        "당고개": 0, "한성대입구": 10, "사당": 24, "남태령": 25,
+        "금정": 34, "산본": 35, "안산": 44, "정왕": 46, "오이도": 47
+      },
+      "patterns": [
+        {
+          "id": "4u-danggogae",
+          "label": "당고개행",
+          "direction": "up",
+          "originIndex": 47,
+          "terminusIndex": 0,
+          "branches": ["본선"],
+          "weekday": { "first": "05:13", "last": "23:05", "headwayMin": 6 },
+          "weekend": { "first": "05:30", "last": "22:13", "headwayMin": 7 }
+        },
+        {
+          "id": "4u-hansung",
+          "label": "한성대입구행",
+          "direction": "up",
+          "originIndex": 47,
+          "terminusIndex": 10,
+          "branches": ["본선"],
+          "weekday": { "trips": ["23:26"] },
+          "weekend": { "trips": ["22:29"] }
+        },
+        {
+          "id": "4u-sadang",
+          "label": "사당행",
+          "direction": "up",
+          "originIndex": 47,
+          "terminusIndex": 24,
+          "branches": ["본선"],
+          "weekday": { "first": "05:40", "last": "23:58", "headwayMin": 9 },
+          "weekend": { "first": "05:40", "last": "22:59", "headwayMin": 10 }
+        },
+        {
+          "id": "4u-geumjeong",
+          "label": "금정행",
+          "direction": "up",
+          "originIndex": 47,
+          "terminusIndex": 34,
+          "branches": ["본선"],
+          "weekday": { "trips": ["24:24"] },
+          "weekend": { "trips": ["23:24"] }
+        },
+        {
+          "id": "4d-oido",
+          "label": "오이도행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 47,
+          "branches": ["본선"],
+          "weekday": { "first": "05:30", "last": "22:56", "headwayMin": 6 },
+          "weekend": { "first": "05:30", "last": "22:00", "headwayMin": 7 }
+        },
+        {
+          "id": "4d-ansan",
+          "label": "안산행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 44,
+          "branches": ["본선"],
+          "weekday": { "first": "05:35", "last": "23:06", "headwayMin": 8 },
+          "weekend": { "first": "05:35", "last": "22:10", "headwayMin": 9 }
+        },
+        {
+          "id": "4d-sadang",
+          "label": "사당행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 24,
+          "branches": ["본선"],
+          "weekday": { "first": "05:30", "last": "24:00", "headwayMin": 9 },
+          "weekend": { "first": "05:30", "last": "23:30", "headwayMin": 10 }
+        },
+        {
+          "id": "4d-sanbon",
+          "label": "산본행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 35,
+          "branches": ["본선"],
+          "weekday": { "trips": ["23:29"] },
+          "weekend": { "trips": ["22:30"] }
+        }
+      ]
+    }
+  }
+}

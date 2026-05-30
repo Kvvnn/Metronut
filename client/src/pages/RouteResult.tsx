@@ -14,13 +14,43 @@ import {
   calculateArrivalTime,
   getLineInfo,
   isLongTransferSegment,
+  involvesScheduledLine,
+  getStationInfo,
 } from "@/lib/pathfinder";
+import { buildServiceErrorCopy, getRouteServiceError } from "@/lib/routeServiceWindow";
+import {
+  getLastDepartureReaching,
+  formatServiceMinute,
+  getScheduleDayType,
+} from "@/lib/serviceSchedule";
 import type { Route } from "@/lib/pathfinder";
+import type { RouteServiceError, RouteServiceErrorCopy } from "@/lib/routeServiceWindow";
+
+/** 시간인지 탐색이 막차로 도달 불가라고 판단했을 때의 안내 문구. */
+function buildLastTrainNotice(from: string, to: string): RouteServiceErrorCopy {
+  const fromIdx = getStationInfo(from).find(s => s.lineId === "4")?.index;
+  const toIdx = getStationInfo(to).find(s => s.lineId === "4")?.index;
+  const dayType = getScheduleDayType(new Date());
+  const lastMin =
+    fromIdx != null && toIdx != null
+      ? getLastDepartureReaching("4", fromIdx, toIdx, dayType)
+      : null;
+  return {
+    title: "막차가 끊겼습니다",
+    description:
+      lastMin != null
+        ? `${from}에서 ${to} 방면으로 가는 막차는 ${formatServiceMinute(lastMin)}에 출발했습니다.`
+        : `${from}에서 ${to} 방면으로 가는 막차가 이미 종료되었습니다.`,
+    hint: "이 시간대에는 운행계통(행선지)이 달라 해당 구간에 도달할 수 없습니다.",
+  };
+}
 
 const routeLabels = [
   { icon: Zap, label: "빠른 경로", color: "#4A90D9" },
   { icon: Heart, label: "편한 경로", color: "#27AE60" },
   { icon: Footprints, label: "도보 적은 경로", color: "#E67E22" },
+  { icon: Repeat, label: "환승 대안", color: "#7C5CFF" },
+  { icon: Clock, label: "우회 경로", color: "#6B7280" },
 ];
 
 export default function RouteResult() {
@@ -31,7 +61,10 @@ export default function RouteResult() {
   const to = searchParams.get("to") || "";
   const origin = searchParams.get("origin") || "";
   const [routes, setRoutes] = useState<Route[]>([]);
+  const [routeIndexes, setRouteIndexes] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+  const [serviceError, setServiceError] = useState<RouteServiceError | null>(null);
+  const [timedNotice, setTimedNotice] = useState<RouteServiceErrorCopy | null>(null);
 
   const buildMapPath = () => {
     const params = new URLSearchParams();
@@ -51,12 +84,45 @@ export default function RouteResult() {
       setLoading(true);
       // 약간의 딜레이로 로딩 UX
       setTimeout(() => {
+        const now = new Date();
+        // 운행계통 스케줄이 있는 노선(4호선)이 걸린 직통 경로는 시간인지 탐색을 사용한다.
+        const useTimed = !via && involvesScheduledLine(from, to);
+
+        if (useTimed) {
+          const found = findRoutes(from, to, { departAt: now });
+          setRoutes(found);
+          setRouteIndexes(found.map((_, i) => i));
+          setServiceError(null);
+          // 막차로 도달 불가(빈 결과)면 안내 문구 표시
+          setTimedNotice(found.length === 0 ? buildLastTrainNotice(from, to) : null);
+          setLoading(false);
+          return;
+        }
+
         const found = via ? findRoutesVia(from, via, to) : findRoutes(from, to);
-        setRoutes(found);
+        const evaluatedRoutes = found.map((route, routeIndex) => ({
+          route,
+          routeIndex,
+          error: getRouteServiceError(route, now),
+        }));
+        const availableRoutes = evaluatedRoutes
+          .filter(({ error }) => !error)
+          .map(({ route, routeIndex }) => ({ route, routeIndex }));
+
+        setRoutes(availableRoutes.map(({ route }) => route));
+        setRouteIndexes(availableRoutes.map(({ routeIndex }) => routeIndex));
+        setTimedNotice(null);
+        setServiceError(
+          found.length > 0 && availableRoutes.length === 0
+            ? evaluatedRoutes[0]?.error ?? null
+            : null,
+        );
         setLoading(false);
       }, 300);
     }
   }, [from, via, to]);
+
+  const serviceErrorCopy = timedNotice ?? (serviceError ? buildServiceErrorCopy(serviceError) : null);
 
   return (
     <div className="min-h-screen bg-background pb-[calc(72px+env(safe-area-inset-bottom,0px))]">
@@ -90,6 +156,26 @@ export default function RouteResult() {
               <div className="h-3 bg-[#F0F0F2] rounded w-48" />
             </div>
           ))
+        ) : serviceErrorCopy ? (
+          <div className="ios-card p-5 text-center">
+            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#FFF1E7]">
+              <Clock size={21} className="text-[#C15B1B]" />
+            </div>
+            <p className="text-[16px] font-bold text-[#1B2838]">{serviceErrorCopy.title}</p>
+            <p className="mt-2 text-[13px] font-medium leading-5 text-[#6B7280]">
+              {serviceErrorCopy.description}
+            </p>
+            <p className="mt-1 text-[12px] font-medium leading-5 text-[#A0A0A7]">
+              {serviceErrorCopy.hint}
+            </p>
+            <button
+              type="button"
+              onClick={handleBack}
+              className="btn-press mt-5 h-11 w-full rounded-2xl bg-[#1B2838] text-[14px] font-semibold text-white"
+            >
+              노선도에서 다시 선택
+            </button>
+          </div>
         ) : routes.length > 0 ? (
           routes.map((route, idx) => {
             const label = routeLabels[idx] || routeLabels[0];
@@ -107,12 +193,13 @@ export default function RouteResult() {
                 transition={{ delay: idx * 0.1, duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
               >
                 <button
-                  className="w-full ios-card p-4 text-left btn-press"
+                  className="relative w-full ios-card p-4 text-left btn-press"
                   onClick={() => {
+                    const routeIndex = routeIndexes[idx] ?? idx;
                     const params = new URLSearchParams({ from, to });
                     if (via) params.set("via", via);
                     if (origin) params.set("origin", origin);
-                    setLocation(`/route-detail/${idx}?${params.toString()}`);
+                    setLocation(`/route-detail/${routeIndex}?${params.toString()}`);
                   }}
                 >
                   {/* Label */}

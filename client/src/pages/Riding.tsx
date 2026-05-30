@@ -18,6 +18,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
 import {
+  getExpressStopNames,
   getLineInfo,
   getPracticalTransferSeconds,
   getStationInfo,
@@ -108,6 +109,7 @@ function generateFakeTrains(
       trainStatus: ["0", "1", "2"][i % 3], // 진입/정차/출발 섞임
       destination,
       receivedAt: new Date().toISOString(),
+      trainType: "일반",
       posIdxOriented: posIdx,
       sameDirection: true,
     });
@@ -150,6 +152,12 @@ function isCircularLineId(lineId: string | null | undefined) {
 function getForwardDistance(startIdx: number, endIdx: number, total: number) {
   if (startIdx < 0 || endIdx < 0 || total <= 0) return Number.POSITIVE_INFINITY;
   return (endIdx - startIdx + total) % total;
+}
+
+function getExpectedUpdnLine(lineId: string, isReversed: boolean) {
+  // 우이신설선 API는 북한산우이 -> 신설동 방향을 0으로 내려준다.
+  if (lineId === "ui") return isReversed ? "1" : "0";
+  return isReversed ? "0" : "1";
 }
 
 function isDeepInactiveTrain(
@@ -224,7 +232,7 @@ function orientRideStations(
   if (isReversed === null && toIdx >= 0) isReversed = toIdx < fromIdx;
   if (isReversed === null) return { stations: lineStations, fromIdx, toIdx, expectedUpdnLine: null };
 
-  const expectedUpdnLine = isReversed ? "0" : "1";
+  const expectedUpdnLine = getExpectedUpdnLine(lineId, isReversed);
   if (!isReversed) return { stations: lineStations, fromIdx, toIdx, expectedUpdnLine };
   const reversed = [...lineStations].reverse();
   return {
@@ -257,8 +265,8 @@ function filterSameDirectionTrains(
   return enriched.filter(t => {
     if (selectedNo && t.trainNo === selectedNo) return true;
     if (expectedUpdnLine && t.updnLine && t.updnLine !== expectedUpdnLine) return false;
+    if (expectedUpdnLine && t.updnLine === expectedUpdnLine) return true;
     if (t.sameDirection === true) return true;
-    if (t.sameDirection === null && expectedUpdnLine && t.updnLine === expectedUpdnLine) return true;
     return false;
   });
 }
@@ -509,7 +517,11 @@ export default function Riding() {
 
       if (sim) {
         setIsSimulated(true);
-        setTrainPositionError(errorMessage ?? "열차 위치를 불러오지 못했습니다.");
+        setTrainPositionError(
+          errorCode === "SIMULATION_ENABLED"
+            ? null
+            : errorMessage ?? "열차 위치를 불러오지 못했습니다.",
+        );
         // 이미 sim 열차가 있으면 유지 (sim advance timer가 움직임), 없으면 새로 생성
         setAvailableTrains(prev => {
           if (prev.length > 0 && prev.every(t => isSimTrainNo(t.trainNo))) return prev;
@@ -518,7 +530,6 @@ export default function Riding() {
         return errorCode ?? "SIMULATED";
       }
       setIsSimulated(false);
-      setTrainPositionError(null);
 
       // 방향 필터 (다층):
       //   0) 선택된 열차는 무조건 통과 (회차/destination 변경으로 필터에서
@@ -530,6 +541,15 @@ export default function Riding() {
       //   4) sameDirection === false: 반대 방향 → 제외
       const enriched = enrichTrains(positions, orientedLineStations);
       const filtered = filterSameDirectionTrains(enriched, orientedLineStations, trainNoRef.current);
+      if (positions.length === 0) {
+        setTrainPositionError("서울시 API 응답에 현재 열차 위치가 없습니다.");
+      } else if (filtered.length === 0) {
+        setTrainPositionError(
+          `${ridingData.lineName} ${ridingData.direction} 열차를 찾지 못했습니다.`,
+        );
+      } else {
+        setTrainPositionError(null);
+      }
       setAvailableTrains(filtered);
       return null;
     };
@@ -1080,6 +1100,22 @@ export default function Riding() {
         ? Math.max(1, stationsUntilBoard * 2 - 1)
         : stationsUntilBoard * 2
       : 0;
+  // 선택한 열차가 급행/특급이면 현재 경로에서 통과(무정차)하는 역을 안내한다.
+  // skipped === null: 해당 노선에 정차패턴이 여럿이라 통과역을 단정할 수 없는 경우(배지만 표시).
+  const expressSkipInfo = useMemo(() => {
+    const type = selectedTrainPos?.trainType;
+    if (!ridingData || (type !== "급행" && type !== "특급")) return null;
+    const stopNames = getExpressStopNames(ridingData.lineId, type);
+    if (!stopNames) return { type, skipped: null as string[] | null };
+    const names = stations.map(s => s.name);
+    const stopIdxs = names.map((n, i) => (stopNames.has(n) ? i : -1)).filter(i => i >= 0);
+    if (stopIdxs.length < 2) return { type, skipped: null };
+    const skipped = names
+      .slice(stopIdxs[0], stopIdxs[stopIdxs.length - 1] + 1)
+      .filter(n => !stopNames.has(n));
+    return { type, skipped };
+  }, [selectedTrainPos?.trainType, ridingData, stations]);
+
   // Picker는 하단 시트에서만 렌더한다. 첫 진입도 열린 하단 시트에서 시작한다.
   const pickerInSheet = isTrainPickerExpanded;
   const selectedTrainStationName = selectedTrainPos?.stationName || currentStation?.name || "위치 확인 중";
@@ -1106,8 +1142,8 @@ export default function Riding() {
     !isTransferOverlay && isTracking && fromIdx >= 0 && toIdx > fromIdx;
 
   const rideSegmentProgressJsx = (
-    <div className="px-7 py-3.5">
-      <div className="relative flex min-h-9 flex-1 items-center gap-2">
+    <div className="px-7 py-2.5">
+      <div className="relative flex h-11 flex-1 items-center gap-2">
         {rideSegments.map((r, i) => {
           const segmentColor =
             r.segment.type === "ride"
@@ -1130,7 +1166,7 @@ export default function Riding() {
                 }
                 setIsTrainPickerExpanded(value => !value);
               }}
-              className="btn-press flex h-11 min-w-0 flex-1 items-center"
+              className="btn-press flex h-full min-w-0 flex-1 items-center"
               style={{ flexGrow: i === currentRideIdx ? 1.8 : 1 }}
               title={`${i + 1}/${totalRides} ${segmentName}`}
               aria-label={`${i + 1}번째 노선으로 이동`}
@@ -1191,6 +1227,14 @@ export default function Riding() {
       <h2 className="truncate px-1 text-[20px] font-bold leading-tight text-[#1B2838]">
         열차를 고르세요
       </h2>
+      {hasFetched && trainPositionError && (
+        <div className="mt-2 rounded-xl border border-[#F0E4D0] bg-[#FFF8EF] px-3 py-2">
+          <p className="text-[11px] font-bold text-[#C97A1B]">실시간 위치 확인 필요</p>
+          <p className="mt-0.5 text-[12px] font-medium leading-relaxed text-[#6E6E73]">
+            {trainPositionError}
+          </p>
+        </div>
+      )}
       {fastTransferLabel && (
         <p className="mt-1 flex items-center gap-1 px-1 text-[12px] font-semibold text-[#E67E22]">
           <Train size={13} />
@@ -1306,9 +1350,9 @@ export default function Riding() {
                 className="relative shrink-0 flex flex-col items-center"
                 style={{ width: `${STATION_WIDTH}px`, scrollSnapAlign: "center" }}
               >
-                {/* Train lane */}
+                {/* Train lane: 같은 역에 겹쳐도 세로로 쌓지 않고 한 줄(가로)로 표시 */}
                 <div
-                  className="w-full flex flex-col items-center justify-end gap-1 mb-1.5"
+                  className="w-full flex flex-row items-center justify-center gap-1 mb-1.5"
                   style={{ minHeight: "45px" }}
                 >
                   {trainsHere.slice(0, 2).map(train => {
@@ -1441,7 +1485,9 @@ export default function Riding() {
                 </span>
               </div>
               <p className="mt-0.5 truncate text-[11px] leading-4 text-[#8E8E93]">
-                {ridingData.direction} · {availableTrains.length}대
+                {trainPositionError
+                  ? "실시간 위치 확인 필요"
+                  : `${ridingData.direction} · ${availableTrains.length}대`}
               </p>
             </div>
             <button
@@ -1470,6 +1516,16 @@ export default function Riding() {
             <p className="text-[14px] font-medium leading-relaxed text-[#8E8E93]">
               {ridingData.fromStationName} 출발 · {ridingData.direction}
             </p>
+            {hasFetched && trainPositionError && (
+              <div className="mt-4 rounded-2xl border border-[#F0E4D0] bg-[#FFF8EF] px-4 py-3 text-left">
+                <p className="text-[12px] font-bold text-[#C97A1B]">
+                  실시간 위치 확인 필요
+                </p>
+                <p className="mt-1 text-[13px] font-medium leading-relaxed text-[#6E6E73]">
+                  {trainPositionError}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -1490,10 +1546,26 @@ export default function Riding() {
                       {ridingData.fromStationName}역까지
                     </span>
                   </div>
-                  <span className="rounded-md bg-[#EBF4FF] px-2 py-1 text-[10px] font-bold text-[#4A90D9]">
-                    {selectedTrainNo}호
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {expressSkipInfo && (
+                      <span
+                        className="rounded-md px-2 py-1 text-[10px] font-bold text-white"
+                        style={{ backgroundColor: lineColor }}
+                      >
+                        {expressSkipInfo.type}
+                      </span>
+                    )}
+                    <span className="rounded-md bg-[#EBF4FF] px-2 py-1 text-[10px] font-bold text-[#4A90D9]">
+                      {selectedTrainNo}호
+                    </span>
+                  </div>
                 </div>
+
+                {expressSkipInfo && expressSkipInfo.skipped && expressSkipInfo.skipped.length > 0 && (
+                  <p className="mb-3 rounded-lg bg-[#FFF7ED] px-2.5 py-1.5 text-[11px] font-medium text-[#B45309]">
+                    이 {expressSkipInfo.type}은 {expressSkipInfo.skipped.join(" · ")} 역을 통과합니다
+                  </p>
+                )}
 
                 <motion.div
                   key={etaMinutes}
@@ -1824,7 +1896,6 @@ function CompactTrainPin({
       : 0; // 정차 or unknown → 역 위치 그대로
 
   const pulsing = train.trainStatus === "0" || train.trainStatus === "1";
-  const inTransit = train.trainStatus === "2" || train.trainStatus === "0";
   const isSoftInactive = inactiveLevel === "soft";
   const isDeepInactive = inactiveLevel === "deep";
   const isInactive = inactiveLevel !== "none";
@@ -1866,17 +1937,17 @@ function CompactTrainPin({
         }}
       >
         <Train size={12} className="text-white shrink-0" />
+        {(train.trainType === "급행" || train.trainType === "특급") && (
+          <span
+            className="rounded-[3px] bg-white px-1 text-[9px] font-extrabold leading-tight whitespace-nowrap"
+            style={{ color: lineColor }}
+          >
+            {train.trainType}
+          </span>
+        )}
         {isSelected && (
           <span className="text-[12px] font-bold leading-none whitespace-nowrap">
             {train.trainNo}
-          </span>
-        )}
-        {inTransit && (
-          <span
-            className="text-[11px] leading-none font-bold"
-            style={{ color: "rgba(255,255,255,0.85)" }}
-          >
-            {train.trainStatus === "2" ? "→" : "←"}
           </span>
         )}
       </div>
