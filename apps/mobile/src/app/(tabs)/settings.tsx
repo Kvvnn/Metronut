@@ -29,7 +29,8 @@ import { FAVORITE_ROUTES_KEY } from '@/lib/routeFavorites';
 import { getUseSimulatedTrainData, setUseSimulatedTrainData } from '@/lib/simulationSettings';
 import { STATION_FAVORITES_KEY } from '@/lib/stationFavorites';
 import { slideUp, stagger } from '@/lib/animations';
-import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
+import { cardShadow, radii, spacing, typography, type Palette } from '@/lib/theme';
+import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 const appIcon = require('@/assets/images/icon.png');
 
@@ -42,7 +43,7 @@ const TINT = {
   green: '#F0FFF4',
   purple: '#F5F0FF',
   red: '#FFF0F0',
-  gray: colors.surfaceAlt,
+  gray: '#F0F1F4',
 } as const;
 
 const ALARM_BEFORE_OPTIONS: { value: 1 | 2 | 3; label: string }[] = [
@@ -74,9 +75,11 @@ function SettingSwitchRow({
   value: boolean;
   onValueChange: (next: boolean) => void;
 }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.settingRow}>
-      <View style={[styles.settingIconWrap, { backgroundColor: iconTint ?? colors.surfaceAlt }]}>
+      <View style={[styles.settingIconWrap, { backgroundColor: iconTint ?? palette.surfaceAlt }]}>
         <Ionicons name={icon} size={17} color={iconColor} />
       </View>
       <View style={styles.settingCopy}>
@@ -87,7 +90,7 @@ function SettingSwitchRow({
         value={value}
         onValueChange={onValueChange}
         trackColor={{ false: '#E5E5EA', true: '#34C759' }}
-        thumbColor={colors.surface}
+        thumbColor={palette.surface}
       />
     </View>
   );
@@ -102,6 +105,7 @@ function SegmentedOptionRow<T extends string | number>({
   selected: T;
   onSelect: (value: T) => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.segmented}>
       {options.map((option) => {
@@ -130,11 +134,12 @@ const NOTIFICATION_STATUS_LABEL: Record<NotificationPermissionStatus, string> = 
 };
 
 export default function SettingsTab() {
+  const { scheme, palette, setPreference } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const isDark = scheme === 'dark';
   const [simulationEnabled, setSimulationEnabled] = useState(false);
   const [preferences, setPreferences] = useState<AppPreferences>(DEFAULT_APP_PREFERENCES);
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermissionStatus>('undetermined');
-  // Phase 9 에서 테마 컨텍스트(use-color-scheme)와 연동. 지금은 행 레이아웃만 구성.
-  const [darkMode, setDarkMode] = useState(false);
 
   const refreshNotificationStatus = useCallback(async () => {
     setNotificationStatus(await getNotificationPermissionStatus());
@@ -224,7 +229,7 @@ export default function SettingsTab() {
               onPress={() => void handleNotificationPermissionPress()}
               style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}>
               <View style={[styles.settingIconWrap, { backgroundColor: TINT.blue }]}>
-                <Ionicons name="notifications-outline" size={17} color={colors.accent} />
+                <Ionicons name="notifications-outline" size={17} color={palette.accent} />
               </View>
               <View style={styles.settingCopy}>
                 <Text style={styles.settingLabel}>기기 알림 권한</Text>
@@ -239,7 +244,7 @@ export default function SettingsTab() {
             <View style={styles.rowDivider} />
             <SettingSwitchRow
               icon="volume-high-outline"
-              iconColor={colors.blue}
+              iconColor={palette.blue}
               iconTint={TINT.blue}
               label="알림 소리"
               value={preferences.alarmSound}
@@ -248,7 +253,7 @@ export default function SettingsTab() {
             <View style={styles.rowDivider} />
             <SettingSwitchRow
               icon="phone-portrait-outline"
-              iconColor={colors.orange}
+              iconColor={palette.orange}
               iconTint={TINT.orange}
               label="진동"
               value={preferences.alarmVibrate}
@@ -258,7 +263,7 @@ export default function SettingsTab() {
             <View style={styles.settingColumn}>
               <View style={styles.settingColumnHeader}>
                 <View style={[styles.settingIconWrap, { backgroundColor: TINT.green }]}>
-                  <Ionicons name="notifications-outline" size={17} color={colors.green} />
+                  <Ionicons name="notifications-outline" size={17} color={palette.green} />
                 </View>
                 <Text style={styles.settingLabel}>하차 알림 시점</Text>
               </View>
@@ -277,7 +282,7 @@ export default function SettingsTab() {
             <View style={styles.settingColumn}>
               <View style={styles.settingColumnHeader}>
                 <View style={[styles.settingIconWrap, { backgroundColor: TINT.purple }]}>
-                  <Ionicons name="git-branch-outline" size={17} color={colors.purple} />
+                  <Ionicons name="git-branch-outline" size={17} color={palette.purple} />
                 </View>
                 <Text style={styles.settingLabel}>선호 경로</Text>
               </View>
@@ -295,7 +300,7 @@ export default function SettingsTab() {
           <View style={styles.sectionCard}>
             <SettingSwitchRow
               icon="train-outline"
-              iconColor={colors.blue}
+              iconColor={palette.blue}
               iconTint={TINT.blue}
               label="시뮬레이션 열차 데이터"
               hint="켜면 실시간 API 대신 앱 안의 예시 도착 정보를 표시합니다."
@@ -310,12 +315,12 @@ export default function SettingsTab() {
           <View style={styles.sectionCard}>
             <SettingSwitchRow
               icon="moon"
-              iconColor={colors.surface}
-              iconTint={colors.primary}
+              iconColor={palette.surface}
+              iconTint={palette.primary}
               label="다크 모드"
-              hint={darkMode ? '다크 테마 사용 중' : '라이트 테마 사용 중'}
-              value={darkMode}
-              onValueChange={setDarkMode}
+              hint={isDark ? '다크 테마 사용 중' : '라이트 테마 사용 중'}
+              value={isDark}
+              onValueChange={(next) => setPreference(next ? 'dark' : 'light')}
             />
             <View style={styles.rowDivider} />
             <Pressable
@@ -323,7 +328,7 @@ export default function SettingsTab() {
               onPress={() => Alert.alert('준비 중', '언어 설정 기능이 곧 제공됩니다.')}
               style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}>
               <View style={[styles.settingIconWrap, { backgroundColor: TINT.blue }]}>
-                <Ionicons name="globe-outline" size={17} color={colors.blue} />
+                <Ionicons name="globe-outline" size={17} color={palette.blue} />
               </View>
               <View style={styles.settingCopy}>
                 <Text style={styles.settingLabel}>언어</Text>
@@ -342,7 +347,7 @@ export default function SettingsTab() {
               onPress={() => Alert.alert('준비 중', '오프라인 데이터 기능이 곧 제공됩니다.')}
               style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}>
               <View style={[styles.settingIconWrap, { backgroundColor: TINT.green }]}>
-                <Ionicons name="cloud-download-outline" size={17} color={colors.green} />
+                <Ionicons name="cloud-download-outline" size={17} color={palette.green} />
               </View>
               <View style={styles.settingCopy}>
                 <Text style={styles.settingLabel}>오프라인 데이터</Text>
@@ -356,13 +361,13 @@ export default function SettingsTab() {
               onPress={handleClearSavedData}
               style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}>
               <View style={[styles.settingIconWrap, styles.settingIconWrapDanger]}>
-                <Ionicons name="trash-outline" size={17} color={colors.red} />
+                <Ionicons name="trash-outline" size={17} color={palette.red} />
               </View>
               <View style={styles.settingCopy}>
                 <Text style={styles.settingLabel}>저장 데이터 초기화</Text>
                 <Text style={styles.settingHint}>즐겨찾기와 탑승 안내 기록을 삭제합니다.</Text>
               </View>
-              <Ionicons name="chevron-forward" size={17} color={colors.muted} />
+              <Ionicons name="chevron-forward" size={17} color={palette.muted} />
             </Pressable>
           </View>
         </Animated.View>
@@ -372,7 +377,7 @@ export default function SettingsTab() {
           <View style={styles.sectionCard}>
             <View style={styles.settingRow}>
               <View style={styles.settingIconWrap}>
-                <Ionicons name="information-circle-outline" size={17} color={colors.muted} />
+                <Ionicons name="information-circle-outline" size={17} color={palette.muted} />
               </View>
               <Text style={[styles.settingLabel, styles.settingLabelGrow]}>앱 버전</Text>
               <Text style={styles.settingValue}>{appVersion}</Text>
@@ -380,7 +385,7 @@ export default function SettingsTab() {
             <View style={styles.rowDivider} />
             <View style={styles.settingRow}>
               <View style={styles.settingIconWrap}>
-                <Ionicons name="server-outline" size={17} color={colors.muted} />
+                <Ionicons name="server-outline" size={17} color={palette.muted} />
               </View>
               <Text style={[styles.settingLabel, styles.settingLabelGrow]}>노선 데이터</Text>
               <Text style={styles.settingValue}>
@@ -393,10 +398,10 @@ export default function SettingsTab() {
               onPress={() => void WebBrowser.openBrowserAsync(PRIVACY_POLICY_URL)}
               style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}>
               <View style={styles.settingIconWrap}>
-                <Ionicons name="shield-checkmark-outline" size={17} color={colors.muted} />
+                <Ionicons name="shield-checkmark-outline" size={17} color={palette.muted} />
               </View>
               <Text style={[styles.settingLabel, styles.settingLabelGrow]}>개인정보 처리방침</Text>
-              <Ionicons name="open-outline" size={16} color={colors.muted} />
+              <Ionicons name="open-outline" size={16} color={palette.muted} />
             </Pressable>
           </View>
         </Animated.View>
@@ -420,10 +425,11 @@ export default function SettingsTab() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: palette.background,
   },
   content: {
     gap: spacing.lg,
@@ -431,15 +437,15 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
   screenTitle: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 28,
     fontWeight: '800',
     letterSpacing: -0.5,
   },
   headerCard: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -457,26 +463,26 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   appName: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 17,
     fontWeight: '800',
   },
   appDescription: {
     ...typography.body,
-    color: colors.subtleText,
+    color: palette.subtleText,
   },
   section: {
     gap: spacing.sm,
   },
   sectionTitle: {
-    color: colors.muted,
+    color: palette.muted,
     fontSize: 12,
     fontWeight: '900',
     textTransform: 'uppercase',
   },
   sectionCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
@@ -500,7 +506,7 @@ const styles = StyleSheet.create({
   },
   settingIconWrap: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
     borderRadius: radii.sm,
     height: 32,
     justifyContent: 'center',
@@ -514,7 +520,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   settingLabel: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 16,
     fontWeight: '800',
   },
@@ -522,21 +528,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   settingValue: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 14,
     fontWeight: '800',
   },
   settingHint: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     lineHeight: 18,
   },
   rowDivider: {
-    backgroundColor: colors.border,
+    backgroundColor: palette.border,
     height: 1,
   },
   segmented: {
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
     borderRadius: radii.sm,
     flexDirection: 'row',
     gap: 4,
@@ -550,20 +556,20 @@ const styles = StyleSheet.create({
     minHeight: 38,
   },
   segmentedButtonActive: {
-    backgroundColor: colors.text,
+    backgroundColor: palette.text,
   },
   segmentedText: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     fontWeight: '900',
   },
   segmentedTextActive: {
-    color: colors.surface,
+    color: palette.surface,
   },
   soonBadge: {
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
     borderRadius: radii.sm - 4,
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 10,
     fontWeight: '800',
     overflow: 'hidden',
@@ -578,7 +584,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   apiText: {
-    color: colors.green,
+    color: palette.green,
     fontSize: 13,
     fontWeight: '800',
     lineHeight: 18,

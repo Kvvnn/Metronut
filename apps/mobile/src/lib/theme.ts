@@ -5,7 +5,10 @@
  *   - 네이비 텍스트(#1B2838), iOS 그레이(#8E8E93)
  *   - 파랑 액센트(#4A90D9), 네이비 primary 버튼
  */
-export const colors = {
+/**
+ * 라이트 팔레트 — 기존 값 그대로(웹 iOS 쿨톤). 라이트 모드는 변화 없음.
+ */
+export const lightPalette = {
   /** 페이지 배경 (웹 bg-background, 쿨 라이트그레이로 카드 대비) */
   background: '#F4F5F7',
   /** 카드/시트 표면 */
@@ -35,6 +38,33 @@ export const colors = {
   /** 보조 퍼플 (웹 #7C5CFF) */
   purple: '#7C5CFF',
 } as const;
+
+export type Palette = { [K in keyof typeof lightPalette]: string };
+
+/**
+ * 다크 팔레트 — 웹 `.dark` 톤을 참고한 딥네이비 계열.
+ * 중립색(배경/표면/텍스트/보더)은 어둡게, 의미색(파랑/그린/레드/오렌지/퍼플)은
+ * 다크 배경 대비를 위해 살짝 밝게. primary 는 네이비 대신 액센트 블루(버튼 대비 확보).
+ */
+export const darkPalette: Palette = {
+  background: '#0F1318',
+  surface: '#1A1F26',
+  surfaceAlt: '#232A33',
+  text: '#F2F4F7',
+  subtleText: '#9CA3AD',
+  muted: '#5C636D',
+  border: '#2B323C',
+  accent: '#5B9BE0',
+  primary: '#4A90D9',
+  green: '#2ECC71',
+  blue: '#5B9BE0',
+  red: '#FF6B5E',
+  orange: '#E8924A',
+  purple: '#9B82FF',
+};
+
+/** 기존 코드 호환용 정적 라이트 팔레트(모듈 레벨 상수 등에서 사용). */
+export const colors = lightPalette;
 
 export const spacing = {
   xs: 6,

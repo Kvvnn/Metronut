@@ -16,7 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { searchStations, type Line } from '@shared/metro/pathfinder';
 
 import { selectionHaptic } from '@/lib/haptics';
-import { colors, radii, spacing, typography } from '@/lib/theme';
+import { colors, radii, spacing, typography, type Palette } from '@/lib/theme';
+import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 type StationField = 'from' | 'via' | 'to';
 
@@ -29,6 +30,7 @@ const fieldCopy: Record<StationField, { title: string; placeholder: string; colo
 };
 
 function LineBadge({ line }: { line: Line }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={[styles.lineBadge, { backgroundColor: line.color }]}>
       <Text style={styles.lineBadgeText}>{line.shortName}</Text>
@@ -47,6 +49,8 @@ export function StationPickerSheet({
   onClose: () => void;
   onSelect: (stationName: string) => void;
 }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [query, setQuery] = useState('');
   const copy = field ? fieldCopy[field] : fieldCopy.from;
   const results = useMemo(() => searchStations(query.trim()), [query]);
@@ -77,18 +81,18 @@ export function StationPickerSheet({
               accessibilityLabel="역 검색 닫기"
               onPress={handleClose}
               style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}>
-              <Ionicons name="close" size={22} color={colors.text} />
+              <Ionicons name="close" size={22} color={palette.text} />
             </Pressable>
           </View>
 
           <View style={[styles.searchBox, { borderColor: copy.color }]}>
-            <Ionicons name="search" size={18} color={colors.muted} />
+            <Ionicons name="search" size={18} color={palette.muted} />
             <TextInput
               autoFocus
               value={query}
               onChangeText={setQuery}
               placeholder={copy.placeholder}
-              placeholderTextColor={colors.muted}
+              placeholderTextColor={palette.muted}
               returnKeyType="search"
               style={styles.searchInput}
             />
@@ -97,7 +101,7 @@ export function StationPickerSheet({
                 accessibilityLabel="검색어 지우기"
                 onPress={() => setQuery('')}
                 style={({ pressed }) => [styles.clearButton, pressed && styles.pressed]}>
-                <Ionicons name="close-circle" size={18} color={colors.muted} />
+                <Ionicons name="close-circle" size={18} color={palette.muted} />
               </Pressable>
             )}
           </View>
@@ -145,10 +149,11 @@ export function StationPickerSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
   sheet: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: palette.background,
   },
   keyboardArea: {
     flex: 1,
@@ -161,19 +166,19 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
   },
   kicker: {
-    color: colors.green,
+    color: palette.green,
     fontSize: 12,
     fontWeight: '900',
     textTransform: 'uppercase',
   },
   title: {
     ...typography.title,
-    color: colors.text,
+    color: palette.text,
   },
   closeButton: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     height: 44,
@@ -185,7 +190,7 @@ const styles = StyleSheet.create({
   },
   searchBox: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: palette.surface,
     borderRadius: radii.md,
     borderWidth: 2,
     flexDirection: 'row',
@@ -196,7 +201,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   searchInput: {
-    color: colors.text,
+    color: palette.text,
     flex: 1,
     fontSize: 17,
     fontWeight: '700',
@@ -212,8 +217,8 @@ const styles = StyleSheet.create({
   },
   resultRow: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -222,10 +227,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   resultPressed: {
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
   },
   stationName: {
-    color: colors.text,
+    color: palette.text,
     flex: 1,
     fontSize: 17,
     fontWeight: '800',
@@ -245,7 +250,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   lineBadgeText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 10,
     fontWeight: '900',
   },
@@ -254,11 +259,11 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     ...typography.body,
-    color: colors.subtleText,
+    color: palette.subtleText,
     textAlign: 'center',
   },
   popularTitle: {
-    color: colors.muted,
+    color: palette.muted,
     fontSize: 12,
     fontWeight: '900',
     textTransform: 'uppercase',
@@ -269,8 +274,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   popularChip: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     minHeight: 42,
@@ -278,7 +283,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   popularChipText: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 14,
     fontWeight: '800',
   },

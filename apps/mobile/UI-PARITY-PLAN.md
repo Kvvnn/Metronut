@@ -78,11 +78,12 @@ cd apps/mobile && npx tsc --noEmit && npx expo lint && npx expo-doctor
 - [x] `btn-press` scale(`PressableScale`) 핵심 CTA 적용, **prefers-reduced-motion 대응**(`useReducedMotion` → Starfield/VoyageTrack/FloatingView 정지)
 **완료 기준:** 웹의 우주 연출이 모바일에도 동일하게 표현. → tsc/lint 통과.
 
-## Phase 9 — 다크 모드
-- [ ] 웹 `.dark` 토큰을 모바일 테마에 추가(라이트/다크 팔레트)
-- [ ] 테마 컨텍스트 + 시스템 연동(`use-color-scheme`) + 설정 토글 연결
-- [ ] 전 화면 다크 검수
-**완료 기준:** 다크 모드가 웹과 동일하게 동작.
+## Phase 9 — 다크 모드 ✅
+- [x] 웹 `.dark` 톤을 참고한 `lightPalette`/`darkPalette` 추가(`lib/theme.ts`). 라이트는 기존 값 그대로 → 라이트 모드 변화 없음. 다크는 딥네이비 중립색 + 대비 보정한 의미색
+- [x] `ThemeProvider` + `useTheme()` + `useThemedStyles()`(`lib/theme-context.tsx`): 시스템 연동(`Appearance`) + `AsyncStorage` 저장 + system/light/dark
+- [x] 설정 다크모드 토글 → 실제 테마 연결(`setPreference`), 루트 Stack/탭바/헤더/StatusBar 테마 반응
+- [x] **전 화면 동적 테마 전환**: 모든 화면·컴포넌트의 `StyleSheet.create` → `useThemedStyles(makeStyles)` 로 전환(home/lines/settings/station/route-result/route-detail/riding/MetroOfficialMap/StationPickerSheet + ui 프리미티브). 의미색 모듈 상수(노선/역할 색)는 정적 유지
+**완료 기준:** 다크 모드가 웹과 동일하게 동작. → tsc + `eslint --max-warnings 0 src` 전체 통과. (실기기 색 미세조정은 추후 QA 권장)
 
 ---
 

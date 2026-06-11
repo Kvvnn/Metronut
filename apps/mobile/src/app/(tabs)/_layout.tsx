@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
-import { colors } from '@/lib/theme';
+import { useTheme } from '@/lib/theme-context';
 
 type TabIconName = keyof typeof Ionicons.glyphMap;
 
@@ -12,21 +12,22 @@ const tabIconMap: Record<string, { active: TabIconName; inactive: TabIconName }>
 };
 
 export default function TabLayout() {
+  const { palette } = useTheme();
   return (
     <Tabs
       screenOptions={({ route }) => ({
-        headerStyle: { backgroundColor: colors.background },
+        headerStyle: { backgroundColor: palette.background },
         headerShadowVisible: false,
-        headerTintColor: colors.text,
+        headerTintColor: palette.text,
         headerTitleStyle: {
           fontSize: 20,
           fontWeight: '800',
         },
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.muted,
+        tabBarActiveTintColor: palette.accent,
+        tabBarInactiveTintColor: palette.muted,
         tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
+          backgroundColor: palette.surface,
+          borderTopColor: palette.border,
           height: 84,
           paddingBottom: 24,
           paddingTop: 8,

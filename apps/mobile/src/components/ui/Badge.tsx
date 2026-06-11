@@ -3,18 +3,10 @@
  */
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors, radii } from '@/lib/theme';
+import { radii } from '@/lib/theme';
+import { useTheme } from '@/lib/theme-context';
 
 type BadgeTone = 'neutral' | 'accent' | 'green' | 'orange' | 'red' | 'purple';
-
-const toneColor: Record<BadgeTone, string> = {
-  neutral: colors.subtleText,
-  accent: colors.accent,
-  green: colors.green,
-  orange: colors.orange,
-  red: colors.red,
-  purple: colors.purple,
-};
 
 export type BadgeProps = {
   label: string;
@@ -27,6 +19,15 @@ export type BadgeProps = {
 };
 
 export function Badge({ label, tone = 'neutral', color, solid = false, style }: BadgeProps) {
+  const { palette } = useTheme();
+  const toneColor: Record<BadgeTone, string> = {
+    neutral: palette.subtleText,
+    accent: palette.accent,
+    green: palette.green,
+    orange: palette.orange,
+    red: palette.red,
+    purple: palette.purple,
+  };
   const base = color ?? toneColor[tone];
   return (
     <View
@@ -35,7 +36,7 @@ export function Badge({ label, tone = 'neutral', color, solid = false, style }: 
         solid ? { backgroundColor: base } : { backgroundColor: `${base}1A` },
         style,
       ]}>
-      <Text style={[styles.text, { color: solid ? colors.surface : base }]} numberOfLines={1}>
+      <Text style={[styles.text, { color: solid ? palette.surface : base }]} numberOfLines={1}>
         {label}
       </Text>
     </View>

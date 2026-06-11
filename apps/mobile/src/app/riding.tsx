@@ -32,7 +32,8 @@ import {
   type RidingRouteSegment,
   type RidingTransferSegment,
 } from '@/lib/ridingSession';
-import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
+import { cardShadow, radii, spacing, typography, type Palette } from '@/lib/theme';
+import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 interface TrainCandidate extends TrainPosition {
   routeStationIndex: number;
@@ -150,16 +151,19 @@ function toTrainCandidates(
 }
 
 function LineBadge({ lineId }: { lineId: string }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const line = getLineInfo(lineId);
 
   return (
-    <View style={[styles.lineBadge, { backgroundColor: line?.color ?? colors.muted }]}>
+    <View style={[styles.lineBadge, { backgroundColor: line?.color ?? palette.muted }]}>
       <Text style={styles.lineBadgeText}>{line?.shortName ?? lineId}</Text>
     </View>
   );
 }
 
 function TransferNotice({ transfer }: { transfer: RidingTransferSegment }) {
+  const styles = useThemedStyles(makeStyles);
   const distanceLabel = transfer.walkDistanceMeters ? ` · ${transfer.walkDistanceMeters}m` : '';
   const fastTransferLabel = transfer.fastTransfer ? formatFastTransferInfo(transfer.fastTransfer) : '정보 없음';
 
@@ -187,6 +191,8 @@ function TrainCandidateRow({
   selected: boolean;
   onPress: () => void;
 }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable
       onPress={onPress}
@@ -197,7 +203,7 @@ function TrainCandidateRow({
       ]}
     >
       <View style={styles.trainNoBadge}>
-        <Ionicons name="train-outline" size={15} color={selected ? colors.surface : colors.accent} />
+        <Ionicons name="train-outline" size={15} color={selected ? palette.surface : palette.accent} />
       </View>
       <View style={styles.trainCopy}>
         <Text style={styles.trainTitle}>
@@ -208,12 +214,14 @@ function TrainCandidateRow({
         </Text>
       </View>
       {candidate.isSimulatedCandidate ? <Text style={styles.simBadge}>SIM</Text> : null}
-      {selected ? <Ionicons name="checkmark-circle" size={20} color={colors.accent} /> : null}
+      {selected ? <Ionicons name="checkmark-circle" size={20} color={palette.accent} /> : null}
     </Pressable>
   );
 }
 
 export default function RidingScreen() {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [route, setRoute] = useState<RidingRoutePayload | null>(null);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
   const [currentStationIndex, setCurrentStationIndex] = useState(0);
@@ -642,7 +650,7 @@ export default function RidingScreen() {
       <ScrollView
         style={styles.scrollBody}
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={loadingTrains} onRefresh={() => void refreshTrainPositions()} tintColor={colors.accent} />}
+        refreshControl={<RefreshControl refreshing={loadingTrains} onRefresh={() => void refreshTrainPositions()} tintColor={palette.accent} />}
       >
 
       {currentSegment?.type === 'transfer' ? (
@@ -675,21 +683,21 @@ export default function RidingScreen() {
 
           <View style={styles.railWrap}>
             <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: line?.color ?? colors.accent }]} />
+              <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: line?.color ?? palette.accent }]} />
             </View>
-            <View style={[styles.trainMarker, { left: `${progress * 100}%`, borderColor: line?.color ?? colors.accent }]}>
-              <Ionicons name="train" size={10} color={line?.color ?? colors.accent} />
+            <View style={[styles.trainMarker, { left: `${progress * 100}%`, borderColor: line?.color ?? palette.accent }]}>
+              <Ionicons name="train" size={10} color={line?.color ?? palette.accent} />
             </View>
           </View>
 
           <View style={styles.controlRow}>
             <Pressable style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]} onPress={handlePrevious}>
-              <Ionicons name="chevron-back" size={17} color={colors.accent} />
+              <Ionicons name="chevron-back" size={17} color={palette.accent} />
               <Text style={styles.secondaryButtonText}>이전</Text>
             </Pressable>
             <Pressable style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]} onPress={handleNext}>
               <Text style={styles.secondaryButtonText}>{isFinalArrival ? '도착 완료' : '다음'}</Text>
-              <Ionicons name="chevron-forward" size={17} color={colors.accent} />
+              <Ionicons name="chevron-forward" size={17} color={palette.accent} />
             </Pressable>
           </View>
         </View>
@@ -703,7 +711,7 @@ export default function RidingScreen() {
             stationCount={currentRideSegment.stationNames.length}
             currentIndex={safeStationIndex}
             remaining={remainingStations}
-            lineColor={line?.color ?? colors.accent}
+            lineColor={line?.color ?? palette.accent}
             moving={remainingStations > 0}
           />
         </View>
@@ -712,7 +720,7 @@ export default function RidingScreen() {
       <View style={styles.alertCard}>
         <View style={styles.alertHeader}>
           <View style={styles.alertTitleRow}>
-            <Ionicons name={alarmEnabled ? 'notifications-outline' : 'notifications-off-outline'} size={18} color={colors.accent} />
+            <Ionicons name={alarmEnabled ? 'notifications-outline' : 'notifications-off-outline'} size={18} color={palette.accent} />
             <Text style={styles.sectionTitle}>하차 알림</Text>
           </View>
           <Switch
@@ -722,7 +730,7 @@ export default function RidingScreen() {
               setAlarmEnabled(enabled);
             }}
             trackColor={{ false: '#E5E5EA', true: '#34C759' }}
-            thumbColor={colors.surface}
+            thumbColor={palette.surface}
           />
         </View>
         <Text style={[styles.alertStatus, alarmEnabled && remainingStations <= alarmBefore && remainingStations > 0 && styles.alertStatusHot]}>
@@ -794,19 +802,19 @@ export default function RidingScreen() {
 
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <Ionicons name="train-outline" size={17} color={line?.color ?? colors.accent} />
+          <Ionicons name="train-outline" size={17} color={line?.color ?? palette.accent} />
           <Text style={styles.sectionTitle}>열차 후보</Text>
           {selectedTrain ? <Text style={styles.selectedPill}>{selectedTrain.trainNo} 선택됨</Text> : null}
         </View>
         <Pressable style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]} onPress={() => void refreshTrainPositions()}>
-          <Ionicons name="refresh" size={16} color={colors.subtleText} />
+          <Ionicons name="refresh" size={16} color={palette.subtleText} />
         </Pressable>
       </View>
 
       {isPastLastTrainForRide ? (
         <View style={styles.lastTrainCard}>
           <View style={styles.lastTrainTitleRow}>
-            <Ionicons name="moon-outline" size={15} color={colors.red} />
+            <Ionicons name="moon-outline" size={15} color={palette.red} />
             <Text style={styles.lastTrainTitle}>막차 종료</Text>
           </View>
           <Text style={styles.lastTrainBody}>이 방향 막차가 이미 끊겨 열차를 고를 수 없습니다.</Text>
@@ -862,8 +870,8 @@ export default function RidingScreen() {
                 <View
                   style={[
                     styles.timelineDot,
-                    isCurrent && { borderColor: line?.color ?? colors.accent, backgroundColor: colors.surface },
-                    isPassed && { backgroundColor: line?.color ?? colors.accent },
+                    isCurrent && { borderColor: line?.color ?? palette.accent, backgroundColor: palette.surface },
+                    isPassed && { backgroundColor: line?.color ?? palette.accent },
                   ]}
                 />
                 <Text style={[styles.timelineStation, isCurrent && styles.timelineStationCurrent, isPassed && styles.timelineStationPassed]}>
@@ -880,10 +888,11 @@ export default function RidingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: palette.background,
   },
   scrollBody: {
     flex: 1,
@@ -895,8 +904,8 @@ const styles = StyleSheet.create({
   },
   miniNav: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderBottomColor: colors.border,
+    backgroundColor: palette.surface,
+    borderBottomColor: palette.border,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: spacing.md,
@@ -914,18 +923,18 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   miniNavRoute: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 16,
     fontWeight: '800',
   },
   miniNavMeta: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 12,
     fontWeight: '700',
   },
   activeCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.md,
@@ -942,25 +951,25 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   cardKicker: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     fontWeight: '900',
   },
   directionText: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 15,
     fontWeight: '900',
     marginTop: 2,
   },
   currentStation: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 34,
     fontWeight: '900',
     lineHeight: 40,
   },
   cardBody: {
     ...typography.body,
-    color: colors.subtleText,
+    color: palette.subtleText,
   },
   voyageCard: {
     borderRadius: radii.lg,
@@ -992,7 +1001,7 @@ const styles = StyleSheet.create({
   },
   trainMarker: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: palette.surface,
     borderRadius: radii.pill,
     borderWidth: 2,
     height: 20,
@@ -1021,26 +1030,26 @@ const styles = StyleSheet.create({
     minHeight: 46,
   },
   secondaryButtonText: {
-    color: colors.accent,
+    color: palette.accent,
     fontSize: 14,
     fontWeight: '900',
   },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: colors.text,
+    backgroundColor: palette.text,
     borderRadius: radii.sm,
     justifyContent: 'center',
     minHeight: 52,
     paddingHorizontal: spacing.lg,
   },
   primaryButtonText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 16,
     fontWeight: '900',
   },
   alertCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
@@ -1059,7 +1068,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   alertStatus: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 14,
     fontWeight: '800',
   },
@@ -1067,7 +1076,7 @@ const styles = StyleSheet.create({
     color: '#C15B1B',
   },
   alertPermissionHint: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 12,
     lineHeight: 17,
   },
@@ -1078,7 +1087,7 @@ const styles = StyleSheet.create({
   alarmBeforeButton: {
     alignItems: 'center',
     backgroundColor: '#F0F1F4',
-    borderColor: colors.border,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     flex: 1,
@@ -1086,16 +1095,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   alarmBeforeButtonActive: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
   },
   alarmBeforeText: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 12,
     fontWeight: '900',
   },
   alarmBeforeTextActive: {
-    color: colors.surface,
+    color: palette.surface,
   },
   transferNotice: {
     backgroundColor: '#FFF8EF',
@@ -1117,7 +1126,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   transferNoticeBody: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     fontWeight: '800',
     lineHeight: 19,
@@ -1141,14 +1150,14 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   sectionTitle: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 17,
     fontWeight: '900',
   },
   selectedPill: {
     backgroundColor: '#EBF4FF',
     borderRadius: radii.pill,
-    color: colors.accent,
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '900',
     paddingHorizontal: 8,
@@ -1156,8 +1165,8 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     height: 38,
@@ -1165,8 +1174,8 @@ const styles = StyleSheet.create({
     width: 38,
   },
   listCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     overflow: 'hidden',
@@ -1186,18 +1195,18 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   preTransferTitle: {
-    color: colors.text,
+    color: palette.text,
     flex: 1,
     fontSize: 14,
     fontWeight: '900',
   },
   preTransferWarning: {
-    color: colors.red,
+    color: palette.red,
     fontSize: 13,
     fontWeight: '800',
   },
   preTransferEmpty: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
   },
   preTransferChips: {
@@ -1205,7 +1214,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   preTransferChip: {
-    backgroundColor: colors.surface,
+    backgroundColor: palette.surface,
     borderColor: '#C15B1B',
     borderRadius: radii.pill,
     borderWidth: 1.5,
@@ -1216,12 +1225,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#C15B1B',
   },
   preTransferChipText: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 12,
     fontWeight: '900',
   },
   preTransferChipTextActive: {
-    color: colors.surface,
+    color: palette.surface,
   },
   preTransferPending: {
     color: '#C15B1B',
@@ -1242,12 +1251,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   lastTrainTitle: {
-    color: colors.red,
+    color: palette.red,
     fontSize: 13,
     fontWeight: '900',
   },
   lastTrainBody: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     lineHeight: 18,
   },
@@ -1265,13 +1274,13 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   expressNoticeBody: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     lineHeight: 18,
   },
   trainRow: {
     alignItems: 'center',
-    borderBottomColor: colors.border,
+    borderBottomColor: palette.border,
     borderBottomWidth: 1,
     flexDirection: 'row',
     gap: spacing.sm,
@@ -1295,12 +1304,12 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   trainTitle: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 15,
     fontWeight: '900',
   },
   trainMeta: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 12,
     fontWeight: '800',
     marginTop: 3,
@@ -1330,19 +1339,19 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   loadingText: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 14,
     fontWeight: '800',
   },
   updatedText: {
-    color: colors.muted,
+    color: palette.muted,
     fontSize: 11,
     fontWeight: '700',
     textAlign: 'right',
   },
   timelineCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
@@ -1364,23 +1373,23 @@ const styles = StyleSheet.create({
     width: 13,
   },
   timelineStation: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     flex: 1,
     fontSize: 15,
     fontWeight: '800',
   },
   timelineStationCurrent: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 17,
     fontWeight: '900',
   },
   timelineStationPassed: {
-    color: colors.muted,
+    color: palette.muted,
   },
   nowPill: {
     backgroundColor: '#EBF4FF',
     borderRadius: radii.pill,
-    color: colors.accent,
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '900',
     paddingHorizontal: 8,
@@ -1394,26 +1403,26 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   lineBadgeText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 11,
     fontWeight: '900',
   },
   emptyCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.md,
     padding: spacing.lg,
   },
   emptyTitle: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 20,
     fontWeight: '900',
   },
   emptyBody: {
     ...typography.body,
-    color: colors.subtleText,
+    color: palette.subtleText,
   },
   pressed: {
     opacity: 0.72,

@@ -8,11 +8,37 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { applyGlobalFont } from '@/lib/apply-global-font';
 import { fontAssets } from '@/lib/fonts';
 import { initializeNotifications } from '@/lib/notifications';
-import { colors } from '@/lib/theme';
+import { ThemeProvider, useTheme } from '@/lib/theme-context';
 
 // 첫 렌더 전에 전역 Pretendard 패치를 설치한다.
 applyGlobalFont();
 SplashScreen.preventAutoHideAsync();
+
+function ThemedStack() {
+  const { palette, scheme } = useTheme();
+  return (
+    <>
+      <Stack
+        screenOptions={{
+          contentStyle: { backgroundColor: palette.background },
+          headerStyle: { backgroundColor: palette.background },
+          headerShadowVisible: false,
+          headerTintColor: palette.text,
+          headerTitleStyle: {
+            fontSize: 16,
+            fontWeight: '800',
+          },
+        }}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="route-result" options={{ title: '경로 선택' }} />
+        <Stack.Screen name="route-detail/[id]" options={{ title: '경로 상세' }} />
+        <Stack.Screen name="riding" options={{ title: '탑승 안내' }} />
+        <Stack.Screen name="station/[name]" options={{ title: '역 정보' }} />
+      </Stack>
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+    </>
+  );
+}
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(fontAssets);
@@ -32,25 +58,10 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }} onLayout={onReady}>
-      <Stack
-        screenOptions={{
-          contentStyle: { backgroundColor: colors.background },
-          headerStyle: { backgroundColor: colors.background },
-          headerShadowVisible: false,
-          headerTintColor: colors.text,
-          headerTitleStyle: {
-            fontSize: 16,
-            fontWeight: '800',
-          },
-        }}>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="route-result" options={{ title: '경로 선택' }} />
-        <Stack.Screen name="route-detail/[id]" options={{ title: '경로 상세' }} />
-        <Stack.Screen name="riding" options={{ title: '탑승 안내' }} />
-        <Stack.Screen name="station/[name]" options={{ title: '역 정보' }} />
-      </Stack>
-      <StatusBar style="dark" />
-    </GestureHandlerRootView>
+    <ThemeProvider>
+      <GestureHandlerRootView style={{ flex: 1 }} onLayout={onReady}>
+        <ThemedStack />
+      </GestureHandlerRootView>
+    </ThemeProvider>
   );
 }

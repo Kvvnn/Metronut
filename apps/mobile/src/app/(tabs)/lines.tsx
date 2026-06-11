@@ -10,7 +10,8 @@ import { getAllLines, getLineInfo, getStationsByLine, type Line, type Station } 
 
 import { MetroOfficialMap } from '@/components/MetroOfficialMap';
 import { fadeIn, slideUp, stagger } from '@/lib/animations';
-import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
+import { cardShadow, radii, spacing, typography, type Palette } from '@/lib/theme';
+import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 function stationPath(station: Station) {
   return `/station/${encodeURIComponent(station.name)}?line=${encodeURIComponent(station.lineId)}` as Href;
@@ -18,6 +19,8 @@ function stationPath(station: Station) {
 
 /** 전체 노선 목록(웹 AllLines): 배지 + 이름 + chevron 행으로 구성된 단일 카드. */
 function AllLines({ lines, onSelect }: { lines: Line[]; onSelect: (id: string) => void }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Animated.View entering={fadeIn()} style={styles.listCard}>
       {lines.map((line, idx) => (
@@ -33,7 +36,7 @@ function AllLines({ lines, onSelect }: { lines: Line[]; onSelect: (id: string) =
               <Text style={styles.badgeText}>{line.shortName}</Text>
             </View>
             <Text style={styles.lineRowName}>{line.name}</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+            <Ionicons name="chevron-forward" size={16} color={palette.muted} />
           </Pressable>
         </Animated.View>
       ))}
@@ -43,9 +46,11 @@ function AllLines({ lines, onSelect }: { lines: Line[]; onSelect: (id: string) =
 
 /** 선택 노선의 역 목록(웹 LineStations): 노선 헤더 + 타임라인 점 + 환승 배지. */
 function LineStations({ lineId }: { lineId: string }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const stations = useMemo(() => getStationsByLine(lineId), [lineId]);
   const line = getLineInfo(lineId);
-  const color = line?.color ?? colors.accent;
+  const color = line?.color ?? palette.accent;
 
   return (
     <Animated.View entering={fadeIn()} style={styles.listCard}>
@@ -90,6 +95,8 @@ function LineStations({ lineId }: { lineId: string }) {
 }
 
 export default function LinesTab() {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const lines = useMemo(() => getAllLines(), []);
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
   const [selectedLine, setSelectedLine] = useState<string | null>(null);
@@ -106,13 +113,13 @@ export default function LinesTab() {
           <Pressable
             onPress={() => setViewMode('map')}
             style={[styles.segmentedButton, viewMode === 'map' && styles.segmentedButtonActive]}>
-            <Ionicons name="map-outline" size={14} color={viewMode === 'map' ? colors.text : colors.subtleText} />
+            <Ionicons name="map-outline" size={14} color={viewMode === 'map' ? palette.text : palette.subtleText} />
             <Text style={[styles.segmentedText, viewMode === 'map' && styles.segmentedTextActive]}>지도</Text>
           </Pressable>
           <Pressable
             onPress={() => setViewMode('list')}
             style={[styles.segmentedButton, viewMode === 'list' && styles.segmentedButtonActive]}>
-            <Ionicons name="list-outline" size={14} color={viewMode === 'list' ? colors.text : colors.subtleText} />
+            <Ionicons name="list-outline" size={14} color={viewMode === 'list' ? palette.text : palette.subtleText} />
             <Text style={[styles.segmentedText, viewMode === 'list' && styles.segmentedTextActive]}>목록</Text>
           </Pressable>
         </View>
@@ -156,10 +163,11 @@ export default function LinesTab() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: palette.background,
   },
   header: {
     gap: 2,
@@ -168,17 +176,17 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   title: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 28,
     fontWeight: '800',
     letterSpacing: -0.5,
   },
   subtitle: {
     ...typography.body,
-    color: colors.subtleText,
+    color: palette.subtleText,
   },
   segmented: {
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
     borderRadius: radii.md,
     flexDirection: 'row',
     gap: 4,
@@ -195,17 +203,17 @@ const styles = StyleSheet.create({
     minHeight: 38,
   },
   segmentedButtonActive: {
-    backgroundColor: colors.surface,
+    backgroundColor: palette.surface,
     ...cardShadow,
     shadowOpacity: 0.08,
   },
   segmentedText: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     fontWeight: '700',
   },
   segmentedTextActive: {
-    color: colors.text,
+    color: palette.text,
   },
   mapScroll: {
     gap: spacing.md,
@@ -223,30 +231,30 @@ const styles = StyleSheet.create({
   },
   chip: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
     borderRadius: radii.pill,
     justifyContent: 'center',
     minHeight: 36,
     paddingHorizontal: 14,
   },
   chipActiveDark: {
-    backgroundColor: colors.primary,
+    backgroundColor: palette.primary,
   },
   chipText: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 13,
     fontWeight: '700',
   },
   chipTextActive: {
-    color: colors.surface,
+    color: palette.surface,
   },
   listContent: {
     paddingHorizontal: spacing.lg,
     paddingBottom: 120,
   },
   listCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.lg,
     borderWidth: 1,
     overflow: 'hidden',
@@ -260,11 +268,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   rowDivider: {
-    borderBottomColor: colors.border,
+    borderBottomColor: palette.border,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   lineRowName: {
-    color: colors.text,
+    color: palette.text,
     flex: 1,
     fontSize: 15,
     fontWeight: '700',
@@ -278,7 +286,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
   },
   badgeText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 11,
     fontWeight: '900',
   },
@@ -290,7 +298,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   lineHeaderText: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 14,
     fontWeight: '800',
   },
@@ -321,14 +329,14 @@ const styles = StyleSheet.create({
     height: 24,
   },
   timelineDot: {
-    backgroundColor: colors.surface,
+    backgroundColor: palette.surface,
     borderRadius: radii.pill,
     borderWidth: 2,
     height: 12,
     width: 12,
   },
   timelineStationName: {
-    color: colors.text,
+    color: palette.text,
     flex: 1,
     fontSize: 14,
     fontWeight: '700',
@@ -346,7 +354,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   miniBadgeText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 9,
     fontWeight: '900',
   },

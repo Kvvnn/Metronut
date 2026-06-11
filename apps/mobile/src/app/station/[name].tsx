@@ -17,7 +17,8 @@ import {
   type StationFavoriteKind,
   type StationFavoriteMap,
 } from '@/lib/stationFavorites';
-import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
+import { cardShadow, radii, spacing, typography, type Palette } from '@/lib/theme';
+import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] ?? '' : value ?? '';
@@ -29,10 +30,12 @@ function todayDayType(): DayType {
 }
 
 function LineBadge({ lineId }: { lineId: string }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const line = getLineInfo(lineId);
 
   return (
-    <View style={[styles.lineBadge, { backgroundColor: line?.color ?? colors.muted }]}>
+    <View style={[styles.lineBadge, { backgroundColor: line?.color ?? palette.muted }]}>
       <Text style={styles.lineBadgeText}>{line?.shortName ?? lineId}</Text>
     </View>
   );
@@ -47,6 +50,8 @@ function LineSelector({
   selectedLine: string;
   onSelect: (lineId: string) => void;
 }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   if (stations.length <= 1) return null;
 
   return (
@@ -61,7 +66,7 @@ function LineSelector({
             onPress={() => onSelect(station.lineId)}
             style={({ pressed }) => [
               styles.lineChip,
-              isSelected && { backgroundColor: line?.color ?? colors.text, borderColor: line?.color ?? colors.text },
+              isSelected && { backgroundColor: line?.color ?? palette.text, borderColor: line?.color ?? palette.text },
               pressed && styles.pressed,
             ]}
           >
@@ -76,6 +81,7 @@ function LineSelector({
 }
 
 function ArrivalRow({ arrival, selectedLine }: { arrival: ArrivalInfo; selectedLine: string }) {
+  const styles = useThemedStyles(makeStyles);
   const lineId = arrival.lineId || selectedLine;
 
   return (
@@ -118,6 +124,8 @@ function FavoriteButton({
   stationName?: string;
   onPress: (kind: StationFavoriteKind) => void;
 }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable
       onPress={() => onPress(kind)}
@@ -128,8 +136,8 @@ function FavoriteButton({
       ]}
     >
       <View style={styles.favoriteIconRow}>
-        <Ionicons name={icon} size={17} color={selected ? colors.surface : color} />
-        {selected ? <Ionicons name="checkmark" size={15} color={colors.surface} /> : null}
+        <Ionicons name={icon} size={17} color={selected ? palette.surface : color} />
+        {selected ? <Ionicons name="checkmark" size={15} color={palette.surface} /> : null}
       </View>
       <Text style={[styles.favoriteLabel, selected && styles.favoriteLabelActive]}>{label}</Text>
       <Text style={[styles.favoriteStation, selected && styles.favoriteStationActive]} numberOfLines={1}>
@@ -140,6 +148,8 @@ function FavoriteButton({
 }
 
 export default function StationScreen() {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const params = useLocalSearchParams<{ name?: string; line?: string }>();
   const stationName = decodeURIComponent(firstParam(params.name) || '');
   const requestedLine = firstParam(params.line);
@@ -221,7 +231,7 @@ export default function StationScreen() {
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadArrivals} tintColor={colors.accent} />}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadArrivals} tintColor={palette.accent} />}
     >
       <Stack.Screen options={{ title: `${stationName}역` }} />
 
@@ -242,7 +252,7 @@ export default function StationScreen() {
 
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <Ionicons name="train-outline" size={17} color={selectedLineInfo?.color ?? colors.green} />
+          <Ionicons name="train-outline" size={17} color={selectedLineInfo?.color ?? palette.green} />
           <Text style={styles.sectionTitle}>실시간 도착</Text>
           {isSimulated ? <Text style={styles.simulationPill}>시뮬레이션</Text> : null}
         </View>
@@ -251,7 +261,7 @@ export default function StationScreen() {
           onPress={loadArrivals}
           style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
         >
-          <Ionicons name="refresh" size={16} color={colors.subtleText} />
+          <Ionicons name="refresh" size={16} color={palette.subtleText} />
         </Pressable>
       </View>
 
@@ -284,7 +294,7 @@ export default function StationScreen() {
 
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <Ionicons name="time-outline" size={17} color={selectedLineInfo?.color ?? colors.green} />
+          <Ionicons name="time-outline" size={17} color={selectedLineInfo?.color ?? palette.green} />
           <Text style={styles.sectionTitle}>첫차 · 막차</Text>
           <Text style={styles.referencePill}>참고용</Text>
         </View>
@@ -388,7 +398,7 @@ export default function StationScreen() {
 
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <Ionicons name="exit-outline" size={17} color={colors.green} />
+          <Ionicons name="exit-outline" size={17} color={palette.green} />
           <Text style={styles.sectionTitle}>출구 정보</Text>
           <Text style={styles.soonBadge}>준비중</Text>
         </View>
@@ -409,7 +419,7 @@ export default function StationScreen() {
 
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <Ionicons name="train-outline" size={17} color={colors.blue} />
+          <Ionicons name="train-outline" size={17} color={palette.blue} />
           <Text style={styles.sectionTitle}>빠른 환승 칸</Text>
         </View>
       </View>
@@ -424,10 +434,11 @@ export default function StationScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: palette.background,
   },
   content: {
     gap: spacing.md,
@@ -443,7 +454,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   kicker: {
-    color: colors.accent,
+    color: palette.accent,
     fontSize: 12,
     fontWeight: '900',
     textTransform: 'uppercase',
@@ -455,11 +466,11 @@ const styles = StyleSheet.create({
   },
   title: {
     ...typography.title,
-    color: colors.text,
+    color: palette.text,
   },
   subtitle: {
     ...typography.body,
-    color: colors.subtleText,
+    color: palette.subtleText,
   },
   lineSelector: {
     gap: spacing.sm,
@@ -467,8 +478,8 @@ const styles = StyleSheet.create({
   },
   lineChip: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     justifyContent: 'center',
@@ -476,12 +487,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   lineChipText: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 13,
     fontWeight: '900',
   },
   lineChipTextActive: {
-    color: colors.surface,
+    color: palette.surface,
   },
   sectionHeader: {
     alignItems: 'center',
@@ -498,7 +509,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   sectionTitle: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 17,
     fontWeight: '900',
   },
@@ -514,7 +525,7 @@ const styles = StyleSheet.create({
   referencePill: {
     backgroundColor: '#F0F1F4',
     borderRadius: radii.pill,
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 11,
     fontWeight: '900',
     paddingHorizontal: 8,
@@ -522,8 +533,8 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     height: 38,
@@ -531,8 +542,8 @@ const styles = StyleSheet.create({
     width: 38,
   },
   listCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     overflow: 'hidden',
@@ -540,7 +551,7 @@ const styles = StyleSheet.create({
   },
   arrivalRow: {
     alignItems: 'center',
-    borderBottomColor: colors.border,
+    borderBottomColor: palette.border,
     borderBottomWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,
@@ -559,7 +570,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   arrivalDirection: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     flex: 1,
     fontSize: 13,
     fontWeight: '800',
@@ -571,21 +582,21 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   arrivalMessage: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 18,
     fontWeight: '900',
   },
   expressPill: {
     backgroundColor: '#FDECEC',
     borderRadius: radii.pill,
-    color: colors.red,
+    color: palette.red,
     fontSize: 11,
     fontWeight: '900',
     paddingHorizontal: 7,
     paddingVertical: 3,
   },
   currentStation: {
-    color: colors.muted,
+    color: palette.muted,
     fontSize: 12,
     fontWeight: '800',
     maxWidth: 96,
@@ -599,7 +610,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   lineBadgeText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 11,
     fontWeight: '900',
   },
@@ -610,12 +621,12 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   loadingText: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 14,
     fontWeight: '800',
   },
   updatedText: {
-    color: colors.muted,
+    color: palette.muted,
     fontSize: 11,
     fontWeight: '700',
     textAlign: 'right',
@@ -633,23 +644,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   segmentedButtonActive: {
-    backgroundColor: colors.surface,
+    backgroundColor: palette.surface,
   },
   segmentedText: {
-    color: colors.muted,
+    color: palette.muted,
     fontSize: 12,
     fontWeight: '900',
   },
   segmentedTextActive: {
-    color: colors.text,
+    color: palette.text,
   },
   scheduleGrid: {
     flexDirection: 'row',
     gap: spacing.sm,
   },
   scheduleCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flex: 1,
@@ -658,7 +669,7 @@ const styles = StyleSheet.create({
     ...cardShadow,
   },
   scheduleDirection: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -669,12 +680,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   scheduleLabel: {
-    color: colors.muted,
+    color: palette.muted,
     fontSize: 12,
     fontWeight: '800',
   },
   scheduleTime: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 18,
     fontWeight: '900',
   },
@@ -683,8 +694,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   favoriteOption: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flex: 1,
@@ -699,15 +710,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   favoriteLabel: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 13,
     fontWeight: '900',
   },
   favoriteLabelActive: {
-    color: colors.surface,
+    color: palette.surface,
   },
   favoriteStation: {
-    color: colors.muted,
+    color: palette.muted,
     fontSize: 11,
     fontWeight: '800',
   },
@@ -716,7 +727,7 @@ const styles = StyleSheet.create({
   },
   transferRow: {
     alignItems: 'center',
-    borderBottomColor: colors.border,
+    borderBottomColor: palette.border,
     borderBottomWidth: 1,
     flexDirection: 'row',
     gap: spacing.sm,
@@ -731,13 +742,13 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   transferLineName: {
-    color: colors.text,
+    color: palette.text,
     flex: 1,
     fontSize: 14,
     fontWeight: '800',
   },
   transferHint: {
-    color: colors.muted,
+    color: palette.muted,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -752,16 +763,16 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   noticeText: {
-    color: colors.green,
+    color: palette.green,
     flex: 1,
     fontSize: 13,
     fontWeight: '800',
     lineHeight: 19,
   },
   soonBadge: {
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
     borderRadius: 6,
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 10,
     fontWeight: '800',
     overflow: 'hidden',
@@ -779,7 +790,7 @@ const styles = StyleSheet.create({
   },
   exitItem: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
     borderRadius: radii.sm,
     flexDirection: 'row',
     gap: spacing.sm,
@@ -789,38 +800,38 @@ const styles = StyleSheet.create({
   },
   exitNumber: {
     alignItems: 'center',
-    backgroundColor: colors.green,
+    backgroundColor: palette.green,
     borderRadius: radii.pill,
     height: 24,
     justifyContent: 'center',
     width: 24,
   },
   exitNumberText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 11,
     fontWeight: '900',
   },
   exitText: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 12,
     fontWeight: '700',
   },
   emptyCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.lg,
   },
   emptyTitle: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 20,
     fontWeight: '900',
   },
   emptyBody: {
     ...typography.body,
-    color: colors.subtleText,
+    color: palette.subtleText,
   },
   pressed: {
     opacity: 0.72,

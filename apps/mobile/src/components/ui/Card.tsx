@@ -3,7 +3,8 @@
  */
 import { StyleSheet, View, type StyleProp, type ViewProps, type ViewStyle } from 'react-native';
 
-import { cardShadow, colors, radii, spacing } from '@/lib/theme';
+import { cardShadow, radii, spacing, type Palette } from '@/lib/theme';
+import { useThemedStyles } from '@/lib/theme-context';
 
 export type CardProps = ViewProps & {
   style?: StyleProp<ViewStyle>;
@@ -14,6 +15,7 @@ export type CardProps = ViewProps & {
 };
 
 export function Card({ style, padded = true, flat = false, children, ...rest }: CardProps) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View
       {...rest}
@@ -23,14 +25,15 @@ export function Card({ style, padded = true, flat = false, children, ...rest }: 
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-  },
-  padded: {
-    padding: spacing.md,
-  },
-});
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
+    card: {
+      backgroundColor: palette.surface,
+      borderColor: palette.border,
+      borderRadius: radii.lg,
+      borderWidth: 1,
+    },
+    padded: {
+      padding: spacing.md,
+    },
+  });

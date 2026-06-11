@@ -24,7 +24,8 @@ import { formatServiceMinute } from '@shared/metro/serviceSchedule';
 
 import { FloatingView } from '@/components/ui';
 import { slideUp, stagger } from '@/lib/animations';
-import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
+import { cardShadow, colors, radii, spacing, typography, type Palette } from '@/lib/theme';
+import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 /** 시간인지 탐색이 막차로 도달 불가라고 판단했을 때의 안내 문구. */
 function buildLastTrainNotice(from: string, to: string): RouteServiceErrorCopy {
@@ -64,9 +65,11 @@ function routeDetailPath(routeIndex: number, from: string, to: string, via: stri
 }
 
 function LineBadge({ lineId }: { lineId: string }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const line = getLineInfo(lineId);
   return (
-    <View style={[styles.lineBadge, { backgroundColor: line?.color ?? colors.muted }]}>
+    <View style={[styles.lineBadge, { backgroundColor: line?.color ?? palette.muted }]}>
       <Text style={styles.lineBadgeText}>{line?.shortName ?? lineId}</Text>
     </View>
   );
@@ -85,6 +88,8 @@ function RouteCard({
   to: string;
   via: string;
 }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const label = routeLabels[index] ?? routeLabels[routeLabels.length - 1];
   const rideSegments = route.segments.filter((segment) => !segment.isTransfer);
   const patternSegments = rideSegments.filter((segment) => segment.pattern);
@@ -121,7 +126,7 @@ function RouteCard({
                     const line = getLineInfo(segment.lineId);
                     return (
                       <View key={`${segment.lineId}-pattern-${segmentIndex}`} style={styles.patternItem}>
-                        <View style={[styles.patternDot, { backgroundColor: line?.color ?? colors.muted }]} />
+                        <View style={[styles.patternDot, { backgroundColor: line?.color ?? palette.muted }]} />
                         <Text style={styles.patternText}>{segment.pattern!.label}</Text>
                       </View>
                     );
@@ -131,15 +136,15 @@ function RouteCard({
 
               <View style={styles.infoRow}>
                 <View style={styles.infoItem}>
-                  <Ionicons name="repeat" size={12} color={colors.subtleText} />
+                  <Ionicons name="repeat" size={12} color={palette.subtleText} />
                   <Text style={styles.metaText}>환승 {route.transferCount}회</Text>
                 </View>
                 <View style={styles.infoItem}>
-                  <Ionicons name="remove" size={12} color={colors.subtleText} />
+                  <Ionicons name="remove" size={12} color={palette.subtleText} />
                   <Text style={styles.metaText}>{route.stationCount}개 역</Text>
                 </View>
                 <View style={styles.infoItem}>
-                  <Ionicons name="walk" size={12} color={colors.subtleText} />
+                  <Ionicons name="walk" size={12} color={palette.subtleText} />
                   <Text style={styles.metaText}>환승 이동 {route.walkTime}분</Text>
                 </View>
                 {longTransferCount > 0 ? (
@@ -148,7 +153,7 @@ function RouteCard({
                 <Text style={styles.fareText}>₩{route.fare.toLocaleString()}</Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.muted} style={styles.chevron} />
+            <Ionicons name="chevron-forward" size={18} color={palette.muted} style={styles.chevron} />
           </Pressable>
         </Link>
       </FloatingView>
@@ -157,6 +162,7 @@ function RouteCard({
 }
 
 export default function RouteResultScreen() {
+  const styles = useThemedStyles(makeStyles);
   const params = useLocalSearchParams<{ from?: string; via?: string; to?: string }>();
   const from = firstParam(params.from);
   const via = firstParam(params.via);
@@ -230,10 +236,11 @@ export default function RouteResultScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: palette.background,
   },
   content: {
     gap: spacing.md,
@@ -245,16 +252,16 @@ const styles = StyleSheet.create({
   },
   title: {
     ...typography.title,
-    color: colors.text,
+    color: palette.text,
   },
   body: {
     ...typography.body,
-    color: colors.subtleText,
+    color: palette.subtleText,
   },
   card: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -284,12 +291,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   timeText: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 32,
     fontWeight: '900',
   },
   arrivalText: {
-    color: colors.muted,
+    color: palette.muted,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -318,7 +325,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   lineBadgeText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 11,
     fontWeight: '900',
   },
@@ -338,7 +345,7 @@ const styles = StyleSheet.create({
     width: 6,
   },
   patternText: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -354,7 +361,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaText: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -368,7 +375,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   fareText: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 14,
     fontWeight: '700',
     marginLeft: 'auto',
@@ -377,24 +384,24 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   emptyCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.xs,
     padding: spacing.lg,
   },
   emptyTitle: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 17,
     fontWeight: '900',
   },
   emptyBody: {
     ...typography.body,
-    color: colors.subtleText,
+    color: palette.subtleText,
   },
   emptyHint: {
     ...typography.caption,
-    color: colors.muted,
+    color: palette.muted,
   },
 });

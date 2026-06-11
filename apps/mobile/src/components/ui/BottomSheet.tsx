@@ -19,7 +19,8 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 
-import { cardShadow, colors, radii, spacing } from '@/lib/theme';
+import { cardShadow, radii, spacing, type Palette } from '@/lib/theme';
+import { useThemedStyles } from '@/lib/theme-context';
 
 const SPRING = { damping: 20, stiffness: 220, mass: 0.7 } as const;
 
@@ -50,6 +51,7 @@ export function BottomSheet({
   style,
   children,
 }: BottomSheetProps) {
+  const styles = useThemedStyles(makeStyles);
   /** collapsed 일 때 아래로 내려야 하는 거리. */
   const collapsedOffset = Math.max(0, expandedHeight - collapsedHeight);
 
@@ -107,9 +109,10 @@ export function BottomSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
   sheet: {
-    backgroundColor: colors.surface,
+    backgroundColor: palette.surface,
     borderTopLeftRadius: radii.lg + 4,
     borderTopRightRadius: radii.lg + 4,
     ...cardShadow,
@@ -123,7 +126,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
   },
   handle: {
-    backgroundColor: colors.muted,
+    backgroundColor: palette.muted,
     borderRadius: radii.pill,
     height: 5,
     width: 40,

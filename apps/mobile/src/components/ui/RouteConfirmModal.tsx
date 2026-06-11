@@ -9,7 +9,8 @@ import Animated, { FadeIn, FadeOut, SlideInDown } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { easeOutExpo } from '@/lib/animations';
-import { colors } from '@/lib/theme';
+import { type Palette } from '@/lib/theme';
+import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 export function RouteConfirmModal({
   open,
@@ -27,6 +28,8 @@ export function RouteConfirmModal({
   onCancel: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   return (
     <Modal visible={open} transparent animationType="none" onRequestClose={onCancel}>
@@ -39,14 +42,14 @@ export function RouteConfirmModal({
           <View style={styles.header}>
             <Text style={styles.kicker}>경로 시작</Text>
             <Pressable onPress={onCancel} hitSlop={8} style={styles.closeBtn} accessibilityLabel="닫기">
-              <Ionicons name="close" size={14} color={colors.subtleText} />
+              <Ionicons name="close" size={14} color={palette.subtleText} />
             </Pressable>
           </View>
 
           {/* From */}
           <View style={styles.endpointRow}>
             <View style={[styles.pin, { backgroundColor: '#EBF4FF' }]}>
-              <Ionicons name="location" size={14} color={colors.accent} />
+              <Ionicons name="location" size={14} color={palette.accent} />
             </View>
             <Text style={styles.endpointText} numberOfLines={1}>
               {from}
@@ -57,7 +60,7 @@ export function RouteConfirmModal({
             <View style={styles.viaRow}>
               <Text style={styles.viaBar}>┃</Text>
               <View style={[styles.viaDot, { backgroundColor: '#EAF7EF' }]}>
-                <Ionicons name="add" size={11} color={colors.green} />
+                <Ionicons name="add" size={11} color={palette.green} />
               </View>
               <Text style={styles.viaText} numberOfLines={1}>
                 {via} 경유
@@ -65,14 +68,14 @@ export function RouteConfirmModal({
             </View>
           ) : (
             <View style={styles.connector}>
-              <Ionicons name="chevron-down" size={14} color={colors.muted} />
+              <Ionicons name="chevron-down" size={14} color={palette.muted} />
             </View>
           )}
 
           {/* To */}
           <View style={styles.endpointRow}>
             <View style={[styles.pin, { backgroundColor: '#FFF0F0' }]}>
-              <Ionicons name="location" size={14} color={colors.red} />
+              <Ionicons name="location" size={14} color={palette.red} />
             </View>
             <Text style={styles.endpointText} numberOfLines={1}>
               {to}
@@ -95,7 +98,8 @@ export function RouteConfirmModal({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -104,7 +108,7 @@ const styles = StyleSheet.create({
   },
   card: {
     alignSelf: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: palette.surface,
     borderRadius: 24,
     maxWidth: 420,
     padding: 20,
@@ -122,7 +126,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   kicker: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1,
@@ -130,7 +134,7 @@ const styles = StyleSheet.create({
   },
   closeBtn: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
     borderRadius: 999,
     height: 28,
     justifyContent: 'center',
@@ -149,7 +153,7 @@ const styles = StyleSheet.create({
     width: 28,
   },
   endpointText: {
-    color: colors.text,
+    color: palette.text,
     flex: 1,
     fontSize: 18,
     fontWeight: '800',
@@ -162,7 +166,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   viaBar: {
-    color: colors.green,
+    color: palette.green,
     fontSize: 16,
   },
   viaDot: {
@@ -173,7 +177,7 @@ const styles = StyleSheet.create({
     width: 20,
   },
   viaText: {
-    color: colors.green,
+    color: palette.green,
     flexShrink: 1,
     fontSize: 13,
     fontWeight: '600',
@@ -183,7 +187,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   question: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 14,
     marginTop: 20,
     textAlign: 'center',
@@ -201,18 +205,18 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   btnCancel: {
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
   },
   btnCancelText: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 15,
     fontWeight: '600',
   },
   btnConfirm: {
-    backgroundColor: colors.primary,
+    backgroundColor: palette.primary,
   },
   btnConfirmText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 15,
     fontWeight: '600',
   },

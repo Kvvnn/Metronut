@@ -28,7 +28,8 @@ import { PressableScale } from '@/components/ui';
 import { impactHaptic, selectionHaptic, successHaptic } from '@/lib/haptics';
 import { isFavoriteRoute, toggleFavoriteRoute } from '@/lib/routeFavorites';
 import { saveRidingRoute, type RidingRoutePayload } from '@/lib/ridingSession';
-import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
+import { cardShadow, radii, spacing, typography, type Palette } from '@/lib/theme';
+import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] ?? '' : value ?? '';
@@ -123,16 +124,19 @@ function buildRidingRoutePayload(route: Route, fastTransfers: Record<number, Fas
 }
 
 function LineBadge({ lineId, label }: { lineId: string; label?: string }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const line = getLineInfo(lineId);
 
   return (
-    <View style={[styles.lineBadge, { backgroundColor: line?.color ?? colors.muted }]}>
+    <View style={[styles.lineBadge, { backgroundColor: line?.color ?? palette.muted }]}>
       <Text style={styles.lineBadgeText}>{label ?? line?.shortName ?? lineId}</Text>
     </View>
   );
 }
 
 function StatPill({ label, value }: { label: string; value: string }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.statPill}>
       <Text style={styles.statLabel}>{label}</Text>
@@ -150,6 +154,8 @@ function RideSegment({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const line = getLineInfo(segment.lineId);
   const stationCount = Math.max(segment.stations.length - 1, 0);
   const middleStations = segment.stations.slice(1, -1);
@@ -179,11 +185,11 @@ function RideSegment({
 
       {stationCount > 1 ? (
         <Pressable style={({ pressed }) => [styles.middleButton, pressed && styles.pressed]} onPress={onToggle}>
-          <Ionicons name="train-outline" size={16} color={line?.color ?? colors.green} />
+          <Ionicons name="train-outline" size={16} color={line?.color ?? palette.green} />
           <Text style={styles.middleButtonText}>
             {stationCount}개 역 이동 · {segment.time}분
           </Text>
-          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} />
+          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={palette.muted} />
         </Pressable>
       ) : (
         <Text style={styles.segmentMeta}>{segment.time}분 이동</Text>
@@ -210,6 +216,7 @@ function TransferSegment({
   segment: RouteSegment;
   fastTransfer?: FastTransferInfo | null;
 }) {
+  const styles = useThemedStyles(makeStyles);
   const toLine = getLineInfo(segment.lineId);
   const isLongTransfer = isLongTransferSegment(segment);
   const distanceLabel = segment.transferDistanceMeters ? ` · ${segment.transferDistanceMeters}m` : '';
@@ -243,6 +250,8 @@ function TransferSegment({
 }
 
 export default function RouteDetailScreen() {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string; from?: string; via?: string; to?: string }>();
   const id = firstParam(params.id);
@@ -380,7 +389,7 @@ export default function RouteDetailScreen() {
             style={({ pressed }) => [styles.favoriteButton, isFavorite && styles.favoriteButtonActive, pressed && styles.pressed]}
             onPress={handleToggleFavorite}
           >
-            <Ionicons name={isFavorite ? 'star' : 'star-outline'} size={21} color={isFavorite ? '#C8A218' : colors.muted} />
+            <Ionicons name={isFavorite ? 'star' : 'star-outline'} size={21} color={isFavorite ? '#C8A218' : palette.muted} />
           </Pressable>
         </View>
 
@@ -411,17 +420,18 @@ export default function RouteDetailScreen() {
 
       <PressableScale style={styles.ridingButton} haptic onPress={handleStartRiding}>
         <Starfield speed={0.5} density={0.22} />
-        <Ionicons name="play" size={17} color={colors.surface} />
+        <Ionicons name="play" size={17} color={palette.surface} />
         <Text style={styles.ridingButtonText}>탑승 안내 시작</Text>
       </PressableScale>
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: palette.background,
   },
   content: {
     gap: spacing.md,
@@ -432,18 +442,18 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   kicker: {
-    color: colors.accent,
+    color: palette.accent,
     fontSize: 12,
     fontWeight: '900',
     textTransform: 'uppercase',
   },
   title: {
     ...typography.title,
-    color: colors.text,
+    color: palette.text,
   },
   summary: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.md,
@@ -461,18 +471,18 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   summaryTime: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 38,
     fontWeight: '900',
     lineHeight: 44,
   },
   summaryUnit: {
-    color: colors.muted,
+    color: palette.muted,
     fontSize: 14,
     fontWeight: '800',
   },
   arrivalText: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 14,
     fontWeight: '800',
   },
@@ -494,7 +504,7 @@ const styles = StyleSheet.create({
   },
   statPill: {
     backgroundColor: '#F0F1F4',
-    borderColor: colors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     minWidth: 88,
@@ -502,12 +512,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   statLabel: {
-    color: colors.muted,
+    color: palette.muted,
     fontSize: 11,
     fontWeight: '800',
   },
   statValue: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 14,
     fontWeight: '900',
     marginTop: 2,
@@ -516,13 +526,13 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   sectionTitle: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 18,
     fontWeight: '900',
   },
   rideCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.md,
@@ -539,12 +549,12 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   segmentTitle: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 17,
     fontWeight: '900',
   },
   directionText: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     fontWeight: '700',
     marginTop: 2,
@@ -557,7 +567,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   lineBadgeText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 11,
     fontWeight: '900',
   },
@@ -571,20 +581,20 @@ const styles = StyleSheet.create({
     minHeight: 30,
   },
   stationDot: {
-    backgroundColor: colors.surface,
+    backgroundColor: palette.surface,
     borderRadius: radii.pill,
     borderWidth: 3,
     height: 16,
     width: 16,
   },
   stationName: {
-    color: colors.text,
+    color: palette.text,
     flex: 1,
     fontSize: 20,
     fontWeight: '900',
   },
   stationConnector: {
-    backgroundColor: colors.border,
+    backgroundColor: palette.border,
     height: 18,
     marginLeft: 7,
     width: 2,
@@ -599,13 +609,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   middleButtonText: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     flex: 1,
     fontSize: 13,
     fontWeight: '800',
   },
   segmentMeta: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -626,7 +636,7 @@ const styles = StyleSheet.create({
     width: 6,
   },
   middleStationText: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     flex: 1,
     fontSize: 15,
     fontWeight: '700',
@@ -663,7 +673,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   transferBody: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     fontWeight: '700',
     marginTop: 4,
@@ -694,7 +704,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: colors.text,
+    backgroundColor: palette.text,
     borderRadius: radii.sm,
     flexDirection: 'row',
     gap: spacing.xs,
@@ -703,7 +713,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   primaryButtonText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 16,
     fontWeight: '900',
   },
@@ -725,26 +735,26 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   ridingButtonText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 16,
     fontWeight: '800',
   },
   emptyCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.md,
     padding: spacing.lg,
   },
   emptyTitle: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 20,
     fontWeight: '900',
   },
   emptyBody: {
     ...typography.body,
-    color: colors.subtleText,
+    color: palette.subtleText,
   },
   pressed: {
     opacity: 0.72,

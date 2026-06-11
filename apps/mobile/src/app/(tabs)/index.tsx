@@ -21,7 +21,8 @@ import {
   STATION_FAVORITE_KINDS,
   type StationFavoriteMap,
 } from '@/lib/stationFavorites';
-import { cardShadow, colors, radii, spacing } from '@/lib/theme';
+import { cardShadow, radii, spacing, type Palette } from '@/lib/theme';
+import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 type StationField = 'from' | 'via' | 'to';
 
@@ -57,6 +58,8 @@ function SearchField({
   onPress: () => void;
   onClear?: () => void;
 }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={styles.searchField}>
       <View style={[styles.searchDot, { backgroundColor: dotColor }]} />
@@ -65,7 +68,7 @@ function SearchField({
       </Text>
       {value && onClear ? (
         <Pressable accessibilityLabel="지우기" onPress={onClear} hitSlop={8} style={styles.searchFieldClear}>
-          <Ionicons name="close" size={15} color={colors.muted} />
+          <Ionicons name="close" size={15} color={palette.muted} />
         </Pressable>
       ) : null}
     </Pressable>
@@ -73,6 +76,8 @@ function SearchField({
 }
 
 export default function HomeTab() {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [from, setFrom] = useState('');
@@ -180,7 +185,7 @@ export default function HomeTab() {
         <Animated.View entering={slideDown()} style={styles.searchCard}>
           <View style={styles.searchFields}>
             <SearchField
-              dotColor={colors.accent}
+              dotColor={palette.accent}
               value={from}
               placeholder="출발역"
               onPress={() => setPickerField('from')}
@@ -190,7 +195,7 @@ export default function HomeTab() {
             {showVia || via ? (
               <>
                 <SearchField
-                  dotColor={colors.green}
+                  dotColor={palette.green}
                   value={via}
                   placeholder="경유역"
                   onPress={() => setPickerField('via')}
@@ -208,12 +213,12 @@ export default function HomeTab() {
                   setPickerField('via');
                 }}
                 style={styles.addViaRow}>
-                <Ionicons name="add-circle-outline" size={15} color={colors.green} />
+                <Ionicons name="add-circle-outline" size={15} color={palette.green} />
                 <Text style={styles.addViaText}>경유역 추가</Text>
               </Pressable>
             )}
             <SearchField
-              dotColor={colors.red}
+              dotColor={palette.red}
               value={to}
               placeholder="도착역"
               onPress={() => setPickerField('to')}
@@ -225,13 +230,13 @@ export default function HomeTab() {
               accessibilityLabel="출발·도착 바꾸기"
               onPress={handleSwap}
               style={({ pressed }) => [styles.swapButton, pressed && styles.pressed]}>
-              <Ionicons name="swap-vertical" size={16} color={colors.text} />
+              <Ionicons name="swap-vertical" size={16} color={palette.text} />
             </Pressable>
             <Pressable
               accessibilityLabel="경로 검색"
               onPress={goToResult}
               style={({ pressed }) => [styles.searchButton, pressed && styles.pressed]}>
-              <Ionicons name="search" size={18} color={colors.surface} />
+              <Ionicons name="search" size={18} color={palette.surface} />
             </Pressable>
           </View>
         </Animated.View>
@@ -254,13 +259,13 @@ export default function HomeTab() {
               <Pressable
                 onPress={() => setShowRecent(false)}
                 style={[styles.toggleChip, !showRecent && styles.toggleChipActive]}>
-                <Ionicons name="star" size={13} color={!showRecent ? '#C8A218' : colors.muted} />
+                <Ionicons name="star" size={13} color={!showRecent ? '#C8A218' : palette.muted} />
                 <Text style={[styles.toggleText, !showRecent && styles.toggleTextActive]}>즐겨찾기</Text>
               </Pressable>
               <Pressable
                 onPress={() => setShowRecent(true)}
                 style={[styles.toggleChip, showRecent && styles.toggleChipActive]}>
-                <Ionicons name="time-outline" size={13} color={showRecent ? colors.accent : colors.muted} />
+                <Ionicons name="time-outline" size={13} color={showRecent ? palette.accent : palette.muted} />
                 <Text style={[styles.toggleText, showRecent && styles.toggleTextActive]}>최근 검색</Text>
               </Pressable>
             </View>
@@ -286,7 +291,7 @@ export default function HomeTab() {
                           pressed && styles.pressed,
                         ]}>
                         <View style={styles.favStationLabelRow}>
-                          <Ionicons name={icon} size={14} color={favorite ? color : colors.muted} />
+                          <Ionicons name={icon} size={14} color={favorite ? color : palette.muted} />
                           <Text style={styles.favStationLabel}>{label}</Text>
                         </View>
                         <Text style={styles.favStationName} numberOfLines={1}>
@@ -336,7 +341,7 @@ export default function HomeTab() {
                         accessibilityLabel="즐겨찾기 삭제"
                         onPress={() => void handleRemoveFavoriteRoute(route.id)}
                         style={({ pressed }) => [styles.favRouteRemoveBtn, pressed && styles.pressed]}>
-                        <Ionicons name="trash-outline" size={15} color={colors.muted} />
+                        <Ionicons name="trash-outline" size={15} color={palette.muted} />
                       </Pressable>
                     </View>
                   ))}
@@ -366,10 +371,11 @@ export default function HomeTab() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: palette.background,
   },
   mapLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -383,7 +389,7 @@ const styles = StyleSheet.create({
   },
   searchCard: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: palette.surface,
     borderRadius: radii.md,
     flexDirection: 'row',
     gap: spacing.sm,
@@ -408,20 +414,20 @@ const styles = StyleSheet.create({
     width: 8,
   },
   searchFieldValue: {
-    color: colors.text,
+    color: palette.text,
     flex: 1,
     fontSize: 15,
     fontWeight: '700',
   },
   searchFieldPlaceholder: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontWeight: '600',
   },
   searchFieldClear: {
     padding: 2,
   },
   searchDivider: {
-    backgroundColor: colors.border,
+    backgroundColor: palette.border,
     height: 1,
     marginLeft: 18,
   },
@@ -433,7 +439,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
   },
   addViaText: {
-    color: colors.green,
+    color: palette.green,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -443,7 +449,7 @@ const styles = StyleSheet.create({
   },
   swapButton: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
     borderRadius: radii.pill,
     height: 34,
     justifyContent: 'center',
@@ -451,14 +457,14 @@ const styles = StyleSheet.create({
   },
   searchButton: {
     alignItems: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: palette.primary,
     borderRadius: radii.sm,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
   mapHint: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 11,
     fontWeight: '600',
     marginTop: spacing.xs,
@@ -477,7 +483,7 @@ const styles = StyleSheet.create({
   },
   toggleRow: {
     alignSelf: 'center',
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
     borderRadius: radii.md,
     flexDirection: 'row',
     gap: 4,
@@ -492,21 +498,21 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   toggleChipActive: {
-    backgroundColor: colors.surface,
+    backgroundColor: palette.surface,
     ...cardShadow,
     shadowOpacity: 0.08,
   },
   toggleText: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     fontWeight: '800',
   },
   toggleTextActive: {
-    color: colors.text,
+    color: palette.text,
   },
   emptyBox: {
     alignItems: 'center',
-    borderColor: colors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderStyle: 'dashed',
     borderWidth: 1,
@@ -514,12 +520,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
   },
   emptyTitle: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 14,
     fontWeight: '800',
   },
   emptySub: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -528,8 +534,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   favStationChip: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flex: 1,
@@ -546,17 +552,17 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   favStationLabel: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 12,
     fontWeight: '800',
   },
   favStationName: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 14,
     fontWeight: '900',
   },
   favEmptyText: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 13,
     lineHeight: 18,
   },
@@ -590,22 +596,22 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   favRouteTitle: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 14,
     fontWeight: '800',
   },
   favRouteArrow: {
-    color: colors.muted,
+    color: palette.muted,
     fontWeight: '700',
   },
   favRouteMeta: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 12,
     fontWeight: '700',
   },
   favRouteRemoveBtn: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
     borderRadius: radii.pill,
     height: 32,
     justifyContent: 'center',

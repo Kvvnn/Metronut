@@ -18,7 +18,8 @@ import metroData from '@shared/metro/data/metroData.json';
 import { getAllLines, getLineInfo, type Line, type Station } from '@shared/metro/pathfinder';
 
 import { impactHaptic, selectionHaptic, successHaptic, warningHaptic } from '@/lib/haptics';
-import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
+import { cardShadow, colors, radii, spacing, typography, type Palette } from '@/lib/theme';
+import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 const mapImage = require('../../assets/images/metro-official-map.png');
 
@@ -155,6 +156,8 @@ function SelectedPill({
   value: string;
   onClear: () => void;
 }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const meta = roleMeta[role];
 
   return (
@@ -164,7 +167,7 @@ function SelectedPill({
         {value}
       </Text>
       <Pressable accessibilityLabel={`${meta.label} 지우기`} onPress={onClear} hitSlop={8}>
-        <Ionicons name="close" size={14} color={colors.muted} />
+        <Ionicons name="close" size={14} color={palette.muted} />
       </Pressable>
     </View>
   );
@@ -187,6 +190,8 @@ export function MetroOfficialMap({
   fillHeight = false,
   hideChrome = false,
 }: MetroOfficialMapProps = {}) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const lines = useMemo(() => getAllLines(), []);
   const controlled = Boolean(selections && onStationRoleSelect);
@@ -408,7 +413,7 @@ export function MetroOfficialMap({
               const isSelected = selectedStation?.name === station.name;
               const role: StationRole | null =
                 from === station.name ? 'from' : via === station.name ? 'via' : to === station.name ? 'to' : null;
-              const markerColor = role ? roleMeta[role].color : line?.color ?? colors.green;
+              const markerColor = role ? roleMeta[role].color : line?.color ?? palette.green;
               const markerSize = isSelected ? 30 : role ? 26 : 18;
 
               return (
@@ -446,7 +451,7 @@ export function MetroOfficialMap({
             }}
             style={({ pressed }) => [styles.mapControlButton, pressed && styles.pressed]}
           >
-            <Ionicons name="add" size={18} color={colors.text} />
+            <Ionicons name="add" size={18} color={palette.text} />
           </Pressable>
           <Pressable
             onPress={() => {
@@ -455,7 +460,7 @@ export function MetroOfficialMap({
             }}
             style={({ pressed }) => [styles.mapControlButton, pressed && styles.pressed]}
           >
-            <Ionicons name="remove" size={18} color={colors.text} />
+            <Ionicons name="remove" size={18} color={palette.text} />
           </Pressable>
           <Pressable
             onPress={() => {
@@ -464,7 +469,7 @@ export function MetroOfficialMap({
             }}
             style={({ pressed }) => [styles.mapControlButton, pressed && styles.pressed]}
           >
-            <Ionicons name="expand-outline" size={17} color={colors.text} />
+            <Ionicons name="expand-outline" size={17} color={palette.text} />
           </Pressable>
         </View>
 
@@ -486,7 +491,7 @@ export function MetroOfficialMap({
                 </Text>
               </View>
               <Pressable onPress={() => setSelectedStation(null)} hitSlop={8}>
-                <Ionicons name="close" size={18} color={colors.muted} />
+                <Ionicons name="close" size={18} color={palette.muted} />
               </Pressable>
             </View>
 
@@ -500,7 +505,7 @@ export function MetroOfficialMap({
                     style={({ pressed }) => [styles.popoverRoleBtn, pressed && styles.pressed]}
                   >
                     <View style={[styles.popoverRoleDot, { backgroundColor: meta.color }]}>
-                      <Ionicons name={meta.icon} size={13} color={colors.surface} />
+                      <Ionicons name={meta.icon} size={13} color={palette.surface} />
                     </View>
                     <Text style={styles.popoverRoleText}>{meta.label}지로</Text>
                   </Pressable>
@@ -516,7 +521,7 @@ export function MetroOfficialMap({
               style={({ pressed }) => [styles.popoverDetailBtn, pressed && styles.pressed]}
             >
               <Text style={styles.popoverDetailText}>역 상세 보기</Text>
-              <Ionicons name="chevron-forward" size={15} color={colors.surface} />
+              <Ionicons name="chevron-forward" size={15} color={palette.surface} />
             </Pressable>
           </View>
         ) : null}
@@ -535,7 +540,8 @@ export function MetroOfficialMap({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
   container: {
     gap: spacing.md,
   },
@@ -544,8 +550,8 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   searchStrip: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
@@ -559,7 +565,7 @@ const styles = StyleSheet.create({
   },
   selectionHint: {
     ...typography.caption,
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontWeight: '800',
   },
   selectionPill: {
@@ -577,7 +583,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   selectionPillValue: {
-    color: colors.text,
+    color: palette.text,
     flexShrink: 1,
     fontSize: 13,
     fontWeight: '900',
@@ -585,7 +591,7 @@ const styles = StyleSheet.create({
   },
   searchButton: {
     alignItems: 'center',
-    backgroundColor: colors.text,
+    backgroundColor: palette.text,
     borderRadius: radii.sm,
     justifyContent: 'center',
     minHeight: 44,
@@ -594,7 +600,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#A9A49B',
   },
   searchButtonText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 14,
     fontWeight: '900',
   },
@@ -604,8 +610,8 @@ const styles = StyleSheet.create({
   },
   lineFilterChip: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     justifyContent: 'center',
@@ -614,20 +620,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   lineFilterChipActive: {
-    backgroundColor: colors.text,
-    borderColor: colors.text,
+    backgroundColor: palette.text,
+    borderColor: palette.text,
   },
   lineFilterText: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 12,
     fontWeight: '900',
   },
   lineFilterTextActive: {
-    color: colors.surface,
+    color: palette.surface,
   },
   mapShell: {
     backgroundColor: '#EAEDF1',
-    borderColor: colors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     height: DEFAULT_VIEWPORT_HEIGHT,
@@ -647,18 +653,18 @@ const styles = StyleSheet.create({
   },
   stationMarker: {
     alignItems: 'center',
-    borderColor: colors.surface,
+    borderColor: palette.surface,
     borderRadius: radii.pill,
     borderWidth: 2,
     justifyContent: 'center',
     position: 'absolute',
   },
   stationMarkerSelected: {
-    borderColor: colors.text,
+    borderColor: palette.text,
     borderWidth: 3,
   },
   stationRoleText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 9,
     fontWeight: '900',
   },
@@ -670,8 +676,8 @@ const styles = StyleSheet.create({
   },
   mapControlButton: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     height: 38,
@@ -684,14 +690,14 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   mapMetaText: {
-    color: colors.muted,
+    color: palette.muted,
     flexShrink: 1,
     fontSize: 11,
     fontWeight: '800',
   },
   popover: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
@@ -715,12 +721,12 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   popoverTitle: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 16,
     fontWeight: '900',
   },
   popoverSub: {
-    color: colors.subtleText,
+    color: palette.subtleText,
     fontSize: 12,
     fontWeight: '800',
     marginTop: 2,
@@ -730,7 +736,7 @@ const styles = StyleSheet.create({
   },
   popoverRoleBtn: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: palette.surfaceAlt,
     borderRadius: radii.sm,
     flexDirection: 'row',
     gap: spacing.sm,
@@ -745,13 +751,13 @@ const styles = StyleSheet.create({
     width: 24,
   },
   popoverRoleText: {
-    color: colors.text,
+    color: palette.text,
     fontSize: 13,
     fontWeight: '800',
   },
   popoverDetailBtn: {
     alignItems: 'center',
-    backgroundColor: colors.text,
+    backgroundColor: palette.text,
     borderRadius: radii.sm,
     flexDirection: 'row',
     gap: spacing.xs,
@@ -759,7 +765,7 @@ const styles = StyleSheet.create({
     minHeight: 42,
   },
   popoverDetailText: {
-    color: colors.surface,
+    color: palette.surface,
     fontSize: 13,
     fontWeight: '900',
   },
