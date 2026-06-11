@@ -3,115 +3,155 @@ import { Link } from 'expo-router';
 import type { Href } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getAllLines, getStationsByLine, type Line, type Station } from '@shared/metro/pathfinder';
+import { getAllLines, getLineInfo, getStationsByLine, type Line, type Station } from '@shared/metro/pathfinder';
 
 import { MetroOfficialMap } from '@/components/MetroOfficialMap';
+import { fadeIn, slideUp, stagger } from '@/lib/animations';
 import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
 
 function stationPath(station: Station) {
   return `/station/${encodeURIComponent(station.name)}?line=${encodeURIComponent(station.lineId)}` as Href;
 }
 
-function LineSection({
-  line,
-  expanded,
-  onToggle,
-}: {
-  line: Line;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  const stations = useMemo(() => getStationsByLine(line.id), [line.id]);
-  const visibleStations = expanded ? stations : stations.slice(0, 6);
+/** 전체 노선 목록(웹 AllLines): 배지 + 이름 + chevron 행으로 구성된 단일 카드. */
+function AllLines({ lines, onSelect }: { lines: Line[]; onSelect: (id: string) => void }) {
+  return (
+    <Animated.View entering={fadeIn()} style={styles.listCard}>
+      {lines.map((line, idx) => (
+        <Animated.View key={line.id} entering={slideUp(stagger(idx, 18))}>
+          <Pressable
+            onPress={() => onSelect(line.id)}
+            style={({ pressed }) => [
+              styles.lineRow,
+              idx < lines.length - 1 && styles.rowDivider,
+              pressed && styles.pressed,
+            ]}>
+            <View style={[styles.badge, { backgroundColor: line.color }]}>
+              <Text style={styles.badgeText}>{line.shortName}</Text>
+            </View>
+            <Text style={styles.lineRowName}>{line.name}</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+          </Pressable>
+        </Animated.View>
+      ))}
+    </Animated.View>
+  );
+}
+
+/** 선택 노선의 역 목록(웹 LineStations): 노선 헤더 + 타임라인 점 + 환승 배지. */
+function LineStations({ lineId }: { lineId: string }) {
+  const stations = useMemo(() => getStationsByLine(lineId), [lineId]);
+  const line = getLineInfo(lineId);
+  const color = line?.color ?? colors.accent;
 
   return (
-    <View style={styles.lineSection}>
-      <Pressable style={({ pressed }) => [styles.lineHeader, pressed && styles.pressed]} onPress={onToggle}>
-        <View style={[styles.badge, { backgroundColor: line.color }]}>
-          <Text style={styles.badgeText}>{line.shortName}</Text>
+    <Animated.View entering={fadeIn()} style={styles.listCard}>
+      <View style={[styles.lineHeaderTinted, { backgroundColor: `${color}1A` }]}>
+        <View style={[styles.badge, { backgroundColor: color }]}>
+          <Text style={styles.badgeText}>{line?.shortName}</Text>
         </View>
-        <View style={styles.lineCopy}>
-          <Text style={styles.lineName}>{line.name}</Text>
-          <Text style={styles.lineMeta}>{stations.length}개 역</Text>
-        </View>
-        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
-      </Pressable>
-
-      <View style={styles.stationList}>
-        {visibleStations.map((station) => (
-          <Link key={station.id} href={stationPath(station)} asChild>
-            <Pressable style={({ pressed }) => [styles.stationRow, pressed && styles.pressed]}>
-              <Text style={styles.stationName}>{station.name}</Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.muted} />
-            </Pressable>
-          </Link>
-        ))}
+        <Text style={styles.lineHeaderText}>
+          {line?.name} ({stations.length}개 역)
+        </Text>
       </View>
 
-      {!expanded && stations.length > visibleStations.length ? (
-        <Pressable style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]} onPress={onToggle}>
-          <Text style={styles.moreButtonText}>{stations.length - visibleStations.length}개 역 더 보기</Text>
-        </Pressable>
-      ) : null}
-    </View>
+      {stations.map((station, idx) => {
+        const isLast = idx === stations.length - 1;
+        return (
+          <Link key={station.id} href={stationPath(station)} asChild>
+            <Pressable style={({ pressed }) => [styles.timelineRow, pressed && styles.pressed]}>
+              <View style={styles.timelineCol}>
+                {idx > 0 ? <View style={[styles.timelineConnector, styles.connectorTop, { backgroundColor: `${color}66` }]} /> : null}
+                {!isLast ? <View style={[styles.timelineConnector, styles.connectorBottom, { backgroundColor: `${color}66` }]} /> : null}
+                <View style={[styles.timelineDot, { borderColor: color }]} />
+              </View>
+              <Text style={styles.timelineStationName}>{station.name}</Text>
+              {station.transfers.length > 0 ? (
+                <View style={styles.transferBadges}>
+                  {station.transfers.slice(0, 3).map((tId) => {
+                    const tLine = getLineInfo(tId);
+                    return tLine ? (
+                      <View key={tId} style={[styles.miniBadge, { backgroundColor: tLine.color }]}>
+                        <Text style={styles.miniBadgeText}>{tLine.shortName}</Text>
+                      </View>
+                    ) : null;
+                  })}
+                </View>
+              ) : null}
+            </Pressable>
+          </Link>
+        );
+      })}
+    </Animated.View>
   );
 }
 
 export default function LinesTab() {
   const lines = useMemo(() => getAllLines(), []);
-  const [expandedLineIds, setExpandedLineIds] = useState<Set<string>>(() => new Set(['2']));
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
-
-  const toggleLine = (lineId: string) => {
-    setExpandedLineIds((current) => {
-      const next = new Set(current);
-      if (next.has(lineId)) next.delete(lineId);
-      else next.add(lineId);
-      return next;
-    });
-  };
+  const [selectedLine, setSelectedLine] = useState<string | null>(null);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.kicker}>Lines</Text>
-          <Text style={styles.title}>노선과 역</Text>
-          <Text style={styles.subtitle}>공식 노선도와 역 목록을 함께 확인합니다.</Text>
-        </View>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'top']}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>노선도</Text>
+        <Text style={styles.subtitle}>수도권 전체 {lines.length}개 노선</Text>
 
+        {/* Segment control */}
         <View style={styles.segmented}>
           <Pressable
             onPress={() => setViewMode('map')}
-            style={[styles.segmentedButton, viewMode === 'map' && styles.segmentedButtonActive]}
-          >
-            <Ionicons name="map-outline" size={15} color={viewMode === 'map' ? colors.surface : colors.subtleText} />
+            style={[styles.segmentedButton, viewMode === 'map' && styles.segmentedButtonActive]}>
+            <Ionicons name="map-outline" size={14} color={viewMode === 'map' ? colors.text : colors.subtleText} />
             <Text style={[styles.segmentedText, viewMode === 'map' && styles.segmentedTextActive]}>지도</Text>
           </Pressable>
           <Pressable
             onPress={() => setViewMode('list')}
-            style={[styles.segmentedButton, viewMode === 'list' && styles.segmentedButtonActive]}
-          >
-            <Ionicons name="list-outline" size={15} color={viewMode === 'list' ? colors.surface : colors.subtleText} />
+            style={[styles.segmentedButton, viewMode === 'list' && styles.segmentedButtonActive]}>
+            <Ionicons name="list-outline" size={14} color={viewMode === 'list' ? colors.text : colors.subtleText} />
             <Text style={[styles.segmentedText, viewMode === 'list' && styles.segmentedTextActive]}>목록</Text>
           </Pressable>
         </View>
+      </View>
 
-        {viewMode === 'map' ? (
+      {viewMode === 'map' ? (
+        <ScrollView contentContainerStyle={styles.mapScroll}>
           <MetroOfficialMap />
-        ) : (
-          lines.map((line) => (
-            <LineSection
-              key={line.id}
-              line={line}
-              expanded={expandedLineIds.has(line.id)}
-              onToggle={() => toggleLine(line.id)}
-            />
-          ))
-        )}
-      </ScrollView>
+        </ScrollView>
+      ) : (
+        <View style={styles.listWrap}>
+          {/* 가로 스크롤 노선 선택칩 */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}>
+            <Pressable
+              onPress={() => setSelectedLine(null)}
+              style={[styles.chip, !selectedLine && styles.chipActiveDark]}>
+              <Text style={[styles.chipText, !selectedLine && styles.chipTextActive]}>전체</Text>
+            </Pressable>
+            {lines.map((line) => {
+              const active = selectedLine === line.id;
+              return (
+                <Pressable
+                  key={line.id}
+                  onPress={() => setSelectedLine(line.id)}
+                  style={[styles.chip, active && { backgroundColor: line.color }]}>
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>{line.shortName}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <ScrollView contentContainerStyle={styles.listContent}>
+            {selectedLine ? <LineStations lineId={selectedLine} /> : <AllLines lines={lines} onSelect={setSelectedLine} />}
+          </ScrollView>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -121,24 +161,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  content: {
-    gap: spacing.md,
-    padding: spacing.lg,
-    paddingBottom: 120,
-  },
   header: {
-    gap: spacing.xs,
-    paddingTop: spacing.md,
-  },
-  kicker: {
-    color: colors.accent,
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
+    gap: 2,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   title: {
-    ...typography.title,
     color: colors.text,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
   subtitle: {
     ...typography.body,
@@ -149,6 +182,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     flexDirection: 'row',
     gap: 4,
+    marginTop: spacing.sm,
     padding: 4,
   },
   segmentedButton: {
@@ -158,40 +192,89 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.xs,
     justifyContent: 'center',
-    minHeight: 42,
+    minHeight: 38,
   },
   segmentedButtonActive: {
-    backgroundColor: colors.text,
+    backgroundColor: colors.surface,
+    ...cardShadow,
+    shadowOpacity: 0.08,
   },
   segmentedText: {
     color: colors.subtleText,
-    fontSize: 14,
-    fontWeight: '900',
+    fontSize: 13,
+    fontWeight: '700',
   },
   segmentedTextActive: {
+    color: colors.text,
+  },
+  mapScroll: {
+    gap: spacing.md,
+    padding: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: 120,
+  },
+  listWrap: {
+    flex: 1,
+  },
+  chipRow: {
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  chip: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radii.pill,
+    justifyContent: 'center',
+    minHeight: 36,
+    paddingHorizontal: 14,
+  },
+  chipActiveDark: {
+    backgroundColor: colors.primary,
+  },
+  chipText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  chipTextActive: {
     color: colors.surface,
   },
-  lineSection: {
+  listContent: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: 120,
+  },
+  listCard: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     borderWidth: 1,
     overflow: 'hidden',
     ...cardShadow,
   },
-  lineHeader: {
+  lineRow: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.md,
-    minHeight: 64,
+    minHeight: 56,
     paddingHorizontal: spacing.md,
+  },
+  rowDivider: {
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  lineRowName: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
   },
   badge: {
     alignItems: 'center',
     borderRadius: radii.pill,
-    height: 34,
+    height: 28,
     justifyContent: 'center',
-    minWidth: 34,
+    minWidth: 28,
     paddingHorizontal: 7,
   },
   badgeText: {
@@ -199,46 +282,72 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
   },
-  lineCopy: {
-    flex: 1,
-    gap: 2,
+  lineHeaderTinted: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
-  lineName: {
+  lineHeaderText: {
     color: colors.text,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  lineMeta: {
-    color: colors.subtleText,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '800',
   },
-  stationList: {
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
-  },
-  stationRow: {
+  timelineRow: {
     alignItems: 'center',
-    borderBottomColor: colors.border,
-    borderBottomWidth: 1,
     flexDirection: 'row',
-    minHeight: 50,
+    gap: spacing.sm,
+    minHeight: 48,
     paddingHorizontal: spacing.md,
   },
-  stationName: {
+  timelineCol: {
+    alignItems: 'center',
+    height: 48,
+    justifyContent: 'center',
+    position: 'relative',
+    width: 24,
+  },
+  timelineConnector: {
+    position: 'absolute',
+    width: 2,
+  },
+  connectorTop: {
+    top: 0,
+    height: 24,
+  },
+  connectorBottom: {
+    bottom: 0,
+    height: 24,
+  },
+  timelineDot: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.pill,
+    borderWidth: 2,
+    height: 12,
+    width: 12,
+  },
+  timelineStationName: {
     color: colors.text,
     flex: 1,
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
-  moreButton: {
+  transferBadges: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  miniBadge: {
     alignItems: 'center',
-    minHeight: 46,
+    borderRadius: radii.pill,
+    height: 20,
     justifyContent: 'center',
+    minWidth: 20,
+    paddingHorizontal: 5,
   },
-  moreButtonText: {
-    color: colors.accent,
-    fontSize: 13,
+  miniBadgeText: {
+    color: colors.surface,
+    fontSize: 9,
     fontWeight: '900',
   },
   pressed: {

@@ -18,7 +18,7 @@ import metroData from '@shared/metro/data/metroData.json';
 import { getAllLines, getLineInfo, type Line, type Station } from '@shared/metro/pathfinder';
 
 import { impactHaptic, selectionHaptic, successHaptic, warningHaptic } from '@/lib/haptics';
-import { colors, radii, spacing, typography } from '@/lib/theme';
+import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
 
 const mapImage = require('../../assets/images/metro-official-map.png');
 
@@ -319,6 +319,21 @@ export function MetroOfficialMap({
   const contentHeight = MAP_HEIGHT * transform.scale;
   const selectedLine = selectedLineId ? getLineInfo(selectedLineId) : null;
 
+  // 선택된 역 마커 위치에 앵커되는 팝오버 좌표(웹 MetroMap 팝오버 대응, 가장자리 클램핑).
+  const popoverLayout = useMemo(() => {
+    if (!selectedStation || viewport.width === 0) return null;
+    const POP_W = 224;
+    const POP_H = 236;
+    const edge = 10;
+    const markerX = selectedStation.x * transform.scale + transform.x;
+    const markerY = selectedStation.y * transform.scale + transform.y;
+    const left = clamp(markerX - POP_W / 2, edge, Math.max(edge, viewport.width - POP_W - edge));
+    const placeAbove = markerY > viewport.height / 2;
+    const rawTop = placeAbove ? markerY - 16 - POP_H : markerY + 16;
+    const top = clamp(rawTop, edge, Math.max(edge, viewport.height - POP_H - edge));
+    return { left, top, width: POP_W };
+  }, [selectedStation, transform, viewport]);
+
   return (
     <View style={[styles.container, fillHeight && styles.containerFill]}>
       {hideChrome ? null : (
@@ -452,6 +467,59 @@ export function MetroOfficialMap({
             <Ionicons name="expand-outline" size={17} color={colors.text} />
           </Pressable>
         </View>
+
+        {selectedStation && popoverLayout ? (
+          <View
+            style={[
+              styles.popover,
+              { left: popoverLayout.left, top: popoverLayout.top, width: popoverLayout.width },
+            ]}
+          >
+            <View style={styles.popoverHeader}>
+              <View style={styles.stationTitleWrap}>
+                <Text style={styles.popoverTitle} numberOfLines={1}>
+                  {selectedStation.name}역
+                </Text>
+                <Text style={styles.popoverSub} numberOfLines={1}>
+                  {getLineInfo(selectedStation.lineId)?.name ?? selectedStation.lineId}
+                  {selectedStation.transfers.length > 0 ? ` · 환승 ${selectedStation.transfers.length}` : ''}
+                </Text>
+              </View>
+              <Pressable onPress={() => setSelectedStation(null)} hitSlop={8}>
+                <Ionicons name="close" size={18} color={colors.muted} />
+              </Pressable>
+            </View>
+
+            <View style={styles.popoverRoles}>
+              {(['from', 'via', 'to'] as StationRole[]).map((role) => {
+                const meta = roleMeta[role];
+                return (
+                  <Pressable
+                    key={role}
+                    onPress={() => handleStationRole(role)}
+                    style={({ pressed }) => [styles.popoverRoleBtn, pressed && styles.pressed]}
+                  >
+                    <View style={[styles.popoverRoleDot, { backgroundColor: meta.color }]}>
+                      <Ionicons name={meta.icon} size={13} color={colors.surface} />
+                    </View>
+                    <Text style={styles.popoverRoleText}>{meta.label}지로</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Pressable
+              onPress={() => {
+                successHaptic();
+                router.push(stationDetailPath(selectedStation));
+              }}
+              style={({ pressed }) => [styles.popoverDetailBtn, pressed && styles.pressed]}
+            >
+              <Text style={styles.popoverDetailText}>역 상세 보기</Text>
+              <Ionicons name="chevron-forward" size={15} color={colors.surface} />
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       {hideChrome ? null : (
@@ -463,49 +531,6 @@ export function MetroOfficialMap({
       </View>
       )}
 
-      {selectedStation ? (
-        <View style={styles.stationSheet}>
-          <View style={styles.stationSheetHeader}>
-            <View style={styles.stationTitleWrap}>
-              <Text style={styles.stationSheetTitle}>{selectedStation.name}역</Text>
-              <Text style={styles.stationSheetSub}>
-                {getLineInfo(selectedStation.lineId)?.name ?? selectedStation.lineId}
-                {selectedStation.transfers.length > 0 ? ` · 환승 ${selectedStation.transfers.length}개` : ''}
-              </Text>
-            </View>
-            <Pressable onPress={() => setSelectedStation(null)} hitSlop={8}>
-              <Ionicons name="close" size={20} color={colors.muted} />
-            </Pressable>
-          </View>
-
-          <View style={styles.roleButtonRow}>
-            {(['from', 'via', 'to'] as StationRole[]).map((role) => {
-              const meta = roleMeta[role];
-              return (
-                <Pressable
-                  key={role}
-                  onPress={() => handleStationRole(role)}
-                  style={({ pressed }) => [styles.roleButton, { borderColor: meta.color }, pressed && styles.pressed]}
-                >
-                  <Ionicons name={meta.icon} size={16} color={meta.color} />
-                  <Text style={[styles.roleButtonText, { color: meta.color }]}>{meta.label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <Pressable
-            onPress={() => {
-              successHaptic();
-              router.push(stationDetailPath(selectedStation));
-            }}
-            style={({ pressed }) => [styles.stationDetailButton, pressed && styles.pressed]}
-          >
-            <Text style={styles.stationDetailButtonText}>역 상세 보기</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.surface} />
-          </Pressable>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -664,64 +689,78 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
-  stationSheet: {
+  popover: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: radii.md,
     borderWidth: 1,
-    gap: spacing.md,
-    padding: spacing.md,
+    gap: spacing.sm,
+    padding: spacing.sm,
+    position: 'absolute',
+    ...cardShadow,
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 14,
   },
-  stationSheetHeader: {
+  popoverHeader: {
     alignItems: 'flex-start',
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
+    paddingHorizontal: 2,
+    paddingTop: 2,
   },
   stationTitleWrap: {
     flex: 1,
     minWidth: 0,
   },
-  stationSheetTitle: {
+  popoverTitle: {
     color: colors.text,
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '900',
   },
-  stationSheetSub: {
+  popoverSub: {
     color: colors.subtleText,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     marginTop: 2,
   },
-  roleButtonRow: {
+  popoverRoles: {
+    gap: 4,
+  },
+  popoverRoleBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radii.sm,
     flexDirection: 'row',
     gap: spacing.sm,
+    minHeight: 40,
+    paddingHorizontal: spacing.sm,
   },
-  roleButton: {
+  popoverRoleDot: {
     alignItems: 'center',
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    flex: 1,
-    flexDirection: 'row',
-    gap: 4,
+    borderRadius: radii.pill,
+    height: 24,
     justifyContent: 'center',
-    minHeight: 42,
+    width: 24,
   },
-  roleButtonText: {
-    fontSize: 12,
-    fontWeight: '900',
+  popoverRoleText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '800',
   },
-  stationDetailButton: {
+  popoverDetailBtn: {
     alignItems: 'center',
     backgroundColor: colors.text,
     borderRadius: radii.sm,
     flexDirection: 'row',
     gap: spacing.xs,
     justifyContent: 'center',
-    minHeight: 46,
+    minHeight: 42,
   },
-  stationDetailButtonText: {
+  popoverDetailText: {
     color: colors.surface,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '900',
   },
   pressed: {
