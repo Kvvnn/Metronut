@@ -51,10 +51,11 @@ cd apps/mobile && npx tsc --noEmit && npx expo lint && npx expo-doctor
 - [x] '탑승 안내 시작' 버튼을 딥스페이스 그라데이션으로(`ridingButton` `experimental_backgroundImage` 160° 네이비) — 별 흐름 `Starfield` 는 Phase 8 에서 이식
 **완료 기준:** 두 화면이 웹과 동일(Starfield 제외). tsc/lint 통과.
 
-## Phase 5 — 역 정보(StationInfo)
-- [ ] 실시간 도착 레이아웃, 첫차·막차 카드, 환승 정보, 출구 정보 섹션, 빠른 환승 안내
-- [ ] 즐겨찾기(집/회사/학교) 버튼 레이아웃 일치
-**완료 기준:** 역 정보 화면이 웹과 동일.
+## Phase 5 — 역 정보(StationInfo) ✅
+- [x] 실시간 도착 레이아웃, 첫차·막차 카드, 환승 정보, 빠른 환승 안내 (기존)
+- [x] 출구 정보 섹션 추가 — 웹과 동일한 2열 그리드 + 그린 번호칩 + "준비중" 배지 placeholder, "빠른 환승 칸" 섹션 헤더 추가
+- [x] 즐겨찾기(집/회사/학교) 버튼 레이아웃 일치 (기존 favoriteGrid)
+**완료 기준:** 역 정보 화면이 웹과 동일. → tsc/lint 통과.
 
 ## Phase 6 — 설정(Settings) ✅
 - [x] 웹 iOS 설정 리스트 정밀 일치: 앱 아이콘 헤더(아이콘+이름+설명 행), **색상 아이콘 칩 틴트**(파랑/오렌지/그린/퍼플/레드/네이비), "설정" 28px 타이틀, 섹션 등장 스태거(`slideUp`)

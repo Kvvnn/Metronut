@@ -386,6 +386,34 @@ export default function StationScreen() {
         </>
       ) : null}
 
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionTitleRow}>
+          <Ionicons name="exit-outline" size={17} color={colors.green} />
+          <Text style={styles.sectionTitle}>출구 정보</Text>
+          <Text style={styles.soonBadge}>준비중</Text>
+        </View>
+      </View>
+
+      <View style={[styles.listCard, styles.exitCard]}>
+        <View style={styles.exitGrid}>
+          {[1, 2, 3, 4].map((exitNumber) => (
+            <View key={exitNumber} style={styles.exitItem}>
+              <View style={styles.exitNumber}>
+                <Text style={styles.exitNumberText}>{exitNumber}</Text>
+              </View>
+              <Text style={styles.exitText}>출구 정보 준비중</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionTitleRow}>
+          <Ionicons name="train-outline" size={17} color={colors.blue} />
+          <Text style={styles.sectionTitle}>빠른 환승 칸</Text>
+        </View>
+      </View>
+
       <View style={styles.noticeCard}>
         <Ionicons name="flash-outline" size={17} color="#C15B1B" />
         <Text style={styles.noticeText}>
@@ -729,6 +757,53 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     lineHeight: 19,
+  },
+  soonBadge: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 6,
+    color: colors.subtleText,
+    fontSize: 10,
+    fontWeight: '800',
+    overflow: 'hidden',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  exitCard: {
+    opacity: 0.7,
+    padding: spacing.md,
+  },
+  exitGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  exitItem: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radii.sm,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.sm,
+    width: '47%',
+    flexGrow: 1,
+  },
+  exitNumber: {
+    alignItems: 'center',
+    backgroundColor: colors.green,
+    borderRadius: radii.pill,
+    height: 24,
+    justifyContent: 'center',
+    width: 24,
+  },
+  exitNumberText: {
+    color: colors.surface,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  exitText: {
+    color: colors.subtleText,
+    fontSize: 12,
+    fontWeight: '700',
   },
   emptyCard: {
     backgroundColor: colors.surface,
