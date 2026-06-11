@@ -69,8 +69,8 @@ cd apps/mobile && npx tsc --noEmit && npx expo lint && npx expo-doctor
 **7b 열차 선택 드로어 + 환승**
 - [x] 미리선택 패널(`preTransferCard` — 환승 전 다음 노선 열차 미리 선택), 환승 안내(active/transfer 카드 + `TransferNotice`) — 기존 구현
 - [x] 우주 항해 비주얼: ride 구간에 딥스페이스 `voyageCard`(`Starfield` + `VoyageTrack` 캡슐/행성/궤도) 추가 (Phase 8 이식)
-- [ ] 하단 **드래그 열차 선택 드로어**(Phase 1 시트로 전환) — **보류**: 현재 인라인 '열차 후보' 리스트가 기능 동일. 드로어 전환은 스크롤 레이아웃 재구성이라 온디바이스 검증 후 진행 권장(유일한 잔여 항목)
-**완료 기준:** 탑승 안내가 웹과 동일(상호작용 포함). → 7a + 우주 비주얼 충족, 인라인 열차 리스트로 기능 충족. tsc/lint 통과.
+- [x] 하단 **드래그 열차 선택 드로어**: 인라인 '열차 후보'를 Phase 1 `BottomSheet` 기반 하단 드로어로 전환(`drawerAnchor` 절대배치, 펼침/접힘 드래그, 내부 열차 리스트 스크롤). 선택 로직(`handleSelectTrain`/후보 계산)은 그대로 유지, 스크롤 본문 하단 패딩으로 접힌 드로어 회피
+**완료 기준:** 탑승 안내가 웹과 동일(상호작용 포함). → 7a·7b·우주 비주얼 모두 충족. tsc + eslint(max-warnings 0) 통과. (드로어 높이/제스처 미세조정은 실기기 QA 권장)
 
 ## Phase 8 — 우주 테마 연출 & 마이크로 인터랙션 ✅
 - [x] `Starfield`(reanimated translate-loop), `VoyageTrack`(View+reanimated 캡슐/행성/궤도) 이식 — **react-native-svg 네이티브 의존 없이** 동일 비주얼(`components/space/`). 적용: 탑승 버튼 + 탑승 안내 voyageCard

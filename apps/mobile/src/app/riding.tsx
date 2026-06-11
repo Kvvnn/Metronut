@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Link, Stack } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { formatFastTransferInfo } from '@shared/fastTransfer';
 import { getExpressStopNames, getLineInfo } from '@shared/metro/pathfinder';
@@ -19,6 +20,7 @@ import {
 } from '@shared/metro/ridingTrains';
 
 import { Starfield, VoyageTrack } from '@/components/space';
+import { BottomSheet } from '@/components/ui';
 import { getAppPreferences } from '@/lib/appPreferences';
 import { ensureNotificationPermission, sendRidingAlert } from '@/lib/notifications';
 import { getTrainPositions, type TrainPosition } from '@/lib/realtimeApi';
@@ -41,6 +43,9 @@ interface TrainCandidate extends TrainPosition {
 }
 
 const TRAIN_POSITION_POLL_MS = 15000;
+/** 열차 선택 드로어: 펼친/접힌 노출 높이(safe-area 제외). */
+const DRAWER_EXPANDED_HEIGHT = 384;
+const DRAWER_COLLAPSED_HEIGHT = 76;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -227,6 +232,8 @@ export default function RidingScreen() {
   const [currentStationIndex, setCurrentStationIndex] = useState(0);
   const [selectedTrainNo, setSelectedTrainNo] = useState<string | null>(null);
   const [alarmEnabled, setAlarmEnabled] = useState(true);
+  const [drawerExpanded, setDrawerExpanded] = useState(true);
+  const insets = useSafeAreaInsets();
   const [alarmBefore, setAlarmBefore] = useState(1);
   const [trainCandidates, setTrainCandidates] = useState<TrainCandidate[]>([]);
   const [loadingTrains, setLoadingTrains] = useState(false);
@@ -649,7 +656,10 @@ export default function RidingScreen() {
 
       <ScrollView
         style={styles.scrollBody}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          currentSegment?.type === 'ride' && { paddingBottom: insets.bottom + DRAWER_COLLAPSED_HEIGHT + 24 },
+        ]}
         refreshControl={<RefreshControl refreshing={loadingTrains} onRefresh={() => void refreshTrainPositions()} tintColor={palette.accent} />}
       >
 
@@ -800,44 +810,6 @@ export default function RidingScreen() {
         </View>
       ) : null}
 
-      <View style={styles.sectionHeader}>
-        <View style={styles.sectionTitleRow}>
-          <Ionicons name="train-outline" size={17} color={line?.color ?? palette.accent} />
-          <Text style={styles.sectionTitle}>열차 후보</Text>
-          {selectedTrain ? <Text style={styles.selectedPill}>{selectedTrain.trainNo} 선택됨</Text> : null}
-        </View>
-        <Pressable style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]} onPress={() => void refreshTrainPositions()}>
-          <Ionicons name="refresh" size={16} color={palette.subtleText} />
-        </Pressable>
-      </View>
-
-      {isPastLastTrainForRide ? (
-        <View style={styles.lastTrainCard}>
-          <View style={styles.lastTrainTitleRow}>
-            <Ionicons name="moon-outline" size={15} color={palette.red} />
-            <Text style={styles.lastTrainTitle}>막차 종료</Text>
-          </View>
-          <Text style={styles.lastTrainBody}>이 방향 막차가 이미 끊겨 열차를 고를 수 없습니다.</Text>
-        </View>
-      ) : null}
-
-      <View style={styles.listCard}>
-        {trainCandidates.length > 0 ? (
-          trainCandidates.map((candidate) => (
-            <TrainCandidateRow
-              key={candidate.trainNo}
-              candidate={candidate}
-              selected={candidate.trainNo === selectedTrainNo}
-              onPress={() => handleSelectTrain(candidate)}
-            />
-          ))
-        ) : (
-          <View style={styles.loadingRow}>
-            <Text style={styles.loadingText}>열차 후보를 불러오는 중입니다</Text>
-          </View>
-        )}
-      </View>
-
       {expressSkipInfo ? (
         <View style={styles.expressNotice}>
           <View style={styles.lastTrainTitleRow}>
@@ -884,6 +856,58 @@ export default function RidingScreen() {
         </View>
       ) : null}
       </ScrollView>
+
+      {currentSegment?.type === 'ride' ? (
+        <View style={styles.drawerAnchor} pointerEvents="box-none">
+          <BottomSheet
+            expanded={drawerExpanded}
+            onChange={setDrawerExpanded}
+            expandedHeight={DRAWER_EXPANDED_HEIGHT + insets.bottom}
+            collapsedHeight={DRAWER_COLLAPSED_HEIGHT}>
+            <View style={[styles.drawerBody, { paddingBottom: insets.bottom + 8 }]}>
+              <View style={styles.drawerHeader}>
+                <View style={styles.sectionTitleRow}>
+                  <Ionicons name="train-outline" size={17} color={line?.color ?? palette.accent} />
+                  <Text style={styles.sectionTitle}>열차 선택</Text>
+                  {selectedTrain ? <Text style={styles.selectedPill}>{selectedTrain.trainNo} 선택됨</Text> : null}
+                </View>
+                <Pressable
+                  style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+                  onPress={() => void refreshTrainPositions()}>
+                  <Ionicons name="refresh" size={16} color={palette.subtleText} />
+                </Pressable>
+              </View>
+
+              {isPastLastTrainForRide ? (
+                <View style={styles.lastTrainCard}>
+                  <View style={styles.lastTrainTitleRow}>
+                    <Ionicons name="moon-outline" size={15} color={palette.red} />
+                    <Text style={styles.lastTrainTitle}>막차 종료</Text>
+                  </View>
+                  <Text style={styles.lastTrainBody}>이 방향 막차가 이미 끊겨 열차를 고를 수 없습니다.</Text>
+                </View>
+              ) : null}
+
+              <ScrollView contentContainerStyle={styles.drawerList} showsVerticalScrollIndicator={false}>
+                {trainCandidates.length > 0 ? (
+                  trainCandidates.map((candidate) => (
+                    <TrainCandidateRow
+                      key={candidate.trainNo}
+                      candidate={candidate}
+                      selected={candidate.trainNo === selectedTrainNo}
+                      onPress={() => handleSelectTrain(candidate)}
+                    />
+                  ))
+                ) : (
+                  <View style={styles.loadingRow}>
+                    <Text style={styles.loadingText}>열차 후보를 불러오는 중입니다</Text>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </BottomSheet>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -896,6 +920,26 @@ const makeStyles = (palette: Palette) =>
   },
   scrollBody: {
     flex: 1,
+  },
+  drawerAnchor: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+  },
+  drawerBody: {
+    flex: 1,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  drawerHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  drawerList: {
+    gap: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   content: {
     gap: spacing.md,
