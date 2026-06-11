@@ -3,10 +3,13 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MetroOfficialMap } from '@/components/MetroOfficialMap';
 import { StationPickerSheet } from '@/components/StationPickerSheet';
+import { BottomSheet, RouteConfirmModal } from '@/components/ui';
+import { slideDown } from '@/lib/animations';
 import { impactHaptic, selectionHaptic, successHaptic, warningHaptic } from '@/lib/haptics';
 import {
   getFavoriteRoutes,
@@ -21,6 +24,11 @@ import {
 import { cardShadow, colors, radii, spacing } from '@/lib/theme';
 
 type StationField = 'from' | 'via' | 'to';
+
+/** 펼친 시트 노출 높이(safe-area 제외). 토글 + 즐겨찾기 칩 + 경로 목록 수용. */
+const SHEET_EXPANDED_HEIGHT = 330;
+/** 접힌 시트 노출 높이 — 핸들바만 살짝 보임. */
+const SHEET_COLLAPSED_HEIGHT = 40;
 
 function buildRouteResultPath(from: string, to: string, via: string) {
   const params = [
@@ -169,7 +177,7 @@ export default function HomeTab() {
 
       {/* 상단 떠있는 검색 카드 */}
       <View style={[styles.searchCardWrap, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
-        <View style={styles.searchCard}>
+        <Animated.View entering={slideDown()} style={styles.searchCard}>
           <View style={styles.searchFields}>
             <SearchField
               dotColor={colors.accent}
@@ -226,45 +234,22 @@ export default function HomeTab() {
               <Ionicons name="search" size={18} color={colors.surface} />
             </Pressable>
           </View>
-        </View>
-        {showConfirm ? (
-          <View style={styles.confirmCard}>
-            <View style={styles.confirmCopy}>
-              <Text style={styles.confirmRoute} numberOfLines={1}>
-                {from}
-                {via ? ` → ${via}` : ''} → {to}
-              </Text>
-              <Text style={styles.confirmSub}>경로를 검색할까요?</Text>
-            </View>
-            <Pressable onPress={() => setConfirmDismissed(true)} hitSlop={8} style={styles.confirmClose}>
-              <Ionicons name="close" size={18} color={colors.muted} />
-            </Pressable>
-            <Pressable onPress={goToResult} style={({ pressed }) => [styles.confirmGo, pressed && styles.pressed]}>
-              <Text style={styles.confirmGoText}>경로 보기</Text>
-            </Pressable>
-          </View>
-        ) : !from || !to ? (
+        </Animated.View>
+        {!from || !to ? (
           <Text style={styles.mapHint}>
             지도에서 {!from ? '출발역' : '도착역'}을 탭하거나 위 칸을 눌러 검색하세요
           </Text>
         ) : null}
       </View>
 
-      {/* 하단 즐겨찾기 시트 */}
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + 8 }]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={sheetCollapsed ? '즐겨찾기 펼치기' : '즐겨찾기 접기'}
-          onPress={() => {
-            selectionHaptic();
-            setSheetCollapsed((v) => !v);
-          }}
-          style={styles.sheetHandleRow}>
-          <View style={styles.sheetHandle} />
-        </Pressable>
-
-        {!sheetCollapsed ? (
-          <View style={styles.sheetBody}>
+      {/* 하단 즐겨찾기 시트 — 실제 드래그(Phase 1 BottomSheet) */}
+      <View style={styles.sheetAnchor} pointerEvents="box-none">
+        <BottomSheet
+          expanded={!sheetCollapsed}
+          onChange={(expanded) => setSheetCollapsed(!expanded)}
+          expandedHeight={SHEET_EXPANDED_HEIGHT + insets.bottom}
+          collapsedHeight={SHEET_COLLAPSED_HEIGHT}>
+          <View style={[styles.sheetBody, { paddingBottom: insets.bottom + 8 }]}>
             <View style={styles.toggleRow}>
               <Pressable
                 onPress={() => setShowRecent(false)}
@@ -359,8 +344,17 @@ export default function HomeTab() {
               </>
             )}
           </View>
-        ) : null}
+        </BottomSheet>
       </View>
+
+      <RouteConfirmModal
+        open={showConfirm}
+        from={from}
+        via={via}
+        to={to}
+        onConfirm={goToResult}
+        onCancel={() => setConfirmDismissed(true)}
+      />
 
       <StationPickerSheet
         field={pickerField}
@@ -470,67 +464,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     textAlign: 'center',
   },
-  confirmCard: {
-    marginTop: spacing.sm,
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    padding: spacing.md,
-    ...cardShadow,
-    shadowOpacity: 0.14,
-  },
-  confirmCopy: {
-    flex: 1,
-    gap: 2,
-  },
-  confirmRoute: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  confirmSub: {
-    color: colors.subtleText,
-    fontSize: 12,
-  },
-  confirmClose: {
-    padding: 2,
-  },
-  confirmGo: {
-    backgroundColor: colors.primary,
-    borderRadius: radii.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  confirmGoText: {
-    color: colors.surface,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+  sheetAnchor: {
     bottom: 0,
     left: 0,
     position: 'absolute',
     right: 0,
-    shadowColor: '#1B2838',
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  sheetHandleRow: {
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-  },
-  sheetHandle: {
-    backgroundColor: '#D1D5DB',
-    borderRadius: 3,
-    height: 5,
-    width: 36,
   },
   sheetBody: {
     gap: spacing.sm,

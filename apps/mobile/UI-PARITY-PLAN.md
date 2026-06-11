@@ -31,13 +31,13 @@ cd apps/mobile && npx tsc --noEmit && npx expo lint && npx expo-doctor
 - [x] 루트에 `GestureHandlerRootView` + `useFonts` 게이트 + 스플래시 제어
 **완료 기준:** 폰트가 웹과 같게 보이고, 공통 시트/버튼이 데모에서 동작. → tsc/lint 통과, 컴포넌트 준비 완료(다음 페이즈에서 화면 적용).
 
-## Phase 2 — 홈 마무리
-- [ ] 하단 즐겨찾기 시트를 Phase 1 `BottomSheet`로 교체(탭 토글 → 진짜 드래그)
-- [ ] 검색카드·시트 등장 애니메이션
-- [ ] 지도 초기 줌/위치를 웹(3배 확대 시작)과 일치
-- [ ] 역 탭 메뉴를 웹 팝오버 스타일로
-- [ ] 경로 확인을 웹 `RouteConfirmDialog`와 동일한 모달로
-**완료 기준:** 홈이 웹 홈과 상호작용까지 거의 동일.
+## Phase 2 — 홈 마무리 (4/5)
+- [x] 하단 즐겨찾기 시트를 Phase 1 `BottomSheet`로 교체(탭 토글 → 진짜 드래그/스냅, `sheetAnchor` 절대배치)
+- [x] 검색카드 등장 애니메이션(`slideDown` = 웹 y:-20→0 fade) + 시트 드래그 등장
+- [x] 지도 초기 줌/위치를 웹(3배 확대 시작)과 일치 — `DEFAULT_SCALE=0.72`(이전 0.24의 3배), 첫 레이아웃에 코어 중앙 정렬(`getInitialTransform`), 리셋도 동일
+- [ ] 역 탭 메뉴를 웹 팝오버 스타일로 — **보류**: 마커 앵커드 팝오버는 위치/클램핑 온디바이스 튜닝 필요. 현재 하단 액션 카드 유지(기능 동일)
+- [x] 경로 확인을 웹 `RouteConfirmDialog`와 동일한 모달로 — `RouteConfirmModal`(하단 슬라이드업 + 백드롭, 핀/경유/시작·취소)
+**완료 기준:** 홈이 웹 홈과 상호작용까지 거의 동일. → 팝오버 1건 제외 충족. tsc/lint 통과.
 
 ## Phase 3 — 노선 탭(웹 MapView)
 - [ ] 웹 `MapView`와 동일 레이아웃: 세그먼트(지도/목록), 지도 뷰, 목록 뷰

@@ -58,6 +58,8 @@ const MAP_HEIGHT = officialMap.metadata.height;
 const MIN_SCALE = 0.12;
 const MAX_SCALE = 1.2;
 const DEFAULT_VIEWPORT_HEIGHT = 430;
+/** 초기 줌 — 웹과 동일하게 코어를 3배 확대한 상태로 시작(이전 0.24의 3배). */
+const DEFAULT_SCALE = 0.72;
 
 const roleMeta: Record<StationRole, { label: string; color: string; icon: keyof typeof Ionicons.glyphMap }> = {
   from: { label: '출발', color: colors.blue, icon: 'radio-button-on-outline' },
@@ -107,6 +109,14 @@ function clampTransform(transform: MapTransform, viewport: ViewportSize): MapTra
     x: contentWidth < viewport.width ? maxX : clamp(transform.x, minX, maxX),
     y: contentHeight < viewport.height ? maxY : clamp(transform.y, minY, maxY),
   };
+}
+
+/** 뷰포트 중앙에 지도 중심을 두는 초기 transform(웹 3배 확대 시작 대응). */
+function getInitialTransform(viewport: ViewportSize): MapTransform {
+  const scale = DEFAULT_SCALE;
+  const x = viewport.width / 2 - (MAP_WIDTH * scale) / 2;
+  const y = viewport.height / 2 - (MAP_HEIGHT * scale) / 2;
+  return clampTransform({ scale, x, y }, viewport);
 }
 
 function getUniqueMapStations(selectedLineId: string) {
@@ -192,11 +202,12 @@ export function MetroOfficialMap({
   const setVia = controlled ? () => {} : setInternalVia;
   const setTo = controlled ? () => {} : setInternalTo;
   const [viewport, setViewport] = useState<ViewportSize>({ width: 0, height: DEFAULT_VIEWPORT_HEIGHT });
-  const [transform, setTransform] = useState<MapTransform>({ scale: 0.24, x: -132, y: -92 });
+  const [transform, setTransform] = useState<MapTransform>({ scale: DEFAULT_SCALE, x: 0, y: 0 });
+  const didInitTransform = useRef(false);
   const gestureRef = useRef({
     x: 0,
     y: 0,
-    scale: 0.24,
+    scale: DEFAULT_SCALE,
     pinchDistance: 0,
   });
 
@@ -244,7 +255,13 @@ export function MetroOfficialMap({
     const width = event.nativeEvent.layout.width;
     const height = event.nativeEvent.layout.height;
     setViewport({ width, height });
-    setTransform((current) => clampTransform(current, { width, height }));
+    // 첫 레이아웃에서만 코어를 중앙에 두고 3배 확대로 시작. 이후엔 사용자 팬을 유지.
+    if (!didInitTransform.current && width > 0 && height > 0) {
+      didInitTransform.current = true;
+      setTransform(getInitialTransform({ width, height }));
+    } else {
+      setTransform((current) => clampTransform(current, { width, height }));
+    }
   };
 
   const handleZoom = (factor: number) => {
@@ -260,7 +277,7 @@ export function MetroOfficialMap({
   };
 
   const handleReset = () => {
-    setTransform(clampTransform({ scale: 0.24, x: -132, y: -92 }, viewport));
+    setTransform(getInitialTransform(viewport));
   };
 
   const handleStationRole = (role: StationRole) => {
