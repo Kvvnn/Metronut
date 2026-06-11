@@ -45,11 +45,11 @@ cd apps/mobile && npx tsc --noEmit && npx expo lint && npx expo-doctor
 - [x] 헤더/타이틀/간격 일치 — "노선도" 28px + "수도권 전체 N개 노선", iOS 세그먼트(흰 활성칩+그림자)
 **완료 기준:** '노선' 탭이 웹 노선도 페이지와 동일. → tsc/lint 통과.
 
-## Phase 4 — 경로 결과 + 경로 상세
-- [ ] `RouteResult`: 카드 레이아웃 정밀 일치(라벨/소요시간/노선 인디케이터/패턴/환승·역수·요금 행), 스태거 등장, 카드 무중력 부유(`space-float`)
-- [ ] `RouteDetail`: 구간 타임라인 정밀 일치, 즐겨찾기 별
-- [ ] '탑승 안내 시작' 버튼을 웹의 딥스페이스(별 흐름 `Starfield` + 그라데이션)로 — Phase 8 에셋 의존 시 우선 그라데이션만
-**완료 기준:** 두 화면이 웹과 동일.
+## Phase 4 — 경로 결과 + 경로 상세 ✅
+- [x] `RouteResult`: 카드 레이아웃 정밀 일치(라벨+아이콘/소요시간/노선 인디케이터+연결대시/패턴 점/환승·역수·환승이동 아이콘 + 긴환승 pill + 요금 우측), 스태거 등장(`slideUp`), 카드 무중력 부유(`FloatingView` = `space-float`)
+- [x] `RouteDetail`: 구간 타임라인 정밀 일치(기존), 즐겨찾기 별(기존)
+- [x] '탑승 안내 시작' 버튼을 딥스페이스 그라데이션으로(`ridingButton` `experimental_backgroundImage` 160° 네이비) — 별 흐름 `Starfield` 는 Phase 8 에서 이식
+**완료 기준:** 두 화면이 웹과 동일(Starfield 제외). tsc/lint 통과.
 
 ## Phase 5 — 역 정보(StationInfo)
 - [ ] 실시간 도착 레이아웃, 첫차·막차 카드, 환승 정보, 출구 정보 섹션, 빠른 환승 안내

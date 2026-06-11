@@ -407,9 +407,9 @@ export default function RouteDetailScreen() {
         ),
       )}
 
-      <Pressable style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]} onPress={handleStartRiding}>
+      <Pressable style={({ pressed }) => [styles.ridingButton, pressed && styles.pressed]} onPress={handleStartRiding}>
         <Ionicons name="play" size={17} color={colors.surface} />
-        <Text style={styles.primaryButtonText}>탑승 안내 시작</Text>
+        <Text style={styles.ridingButtonText}>탑승 안내 시작</Text>
       </Pressable>
     </ScrollView>
   );
@@ -703,6 +703,28 @@ const styles = StyleSheet.create({
     color: colors.surface,
     fontSize: 16,
     fontWeight: '900',
+  },
+  // 웹 '탑승 안내 시작' 딥스페이스 버튼(그라데이션 우선, Starfield 는 Phase 8).
+  ridingButton: {
+    alignItems: 'center',
+    borderRadius: 16,
+    experimental_backgroundImage: 'linear-gradient(160deg, #141b3d 0%, #0b1026 100%)',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'center',
+    minHeight: 56,
+    overflow: 'hidden',
+    paddingHorizontal: spacing.lg,
+    shadowColor: '#0D1238',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  ridingButtonText: {
+    color: colors.surface,
+    fontSize: 16,
+    fontWeight: '800',
   },
   emptyCard: {
     backgroundColor: colors.surface,

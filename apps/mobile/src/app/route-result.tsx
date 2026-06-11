@@ -1,7 +1,9 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Link, Stack, useLocalSearchParams } from 'expo-router';
 import type { Href } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 
 import {
   calculateArrivalTime,
@@ -20,6 +22,8 @@ import {
 } from '@shared/metro/routeServiceWindow';
 import { formatServiceMinute } from '@shared/metro/serviceSchedule';
 
+import { FloatingView } from '@/components/ui';
+import { slideUp, stagger } from '@/lib/animations';
 import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
 
 /** 시간인지 탐색이 막차로 도달 불가라고 판단했을 때의 안내 문구. */
@@ -35,12 +39,12 @@ function buildLastTrainNotice(from: string, to: string): RouteServiceErrorCopy {
   };
 }
 
-const routeLabels = [
-  { label: '빠른 경로', color: colors.blue },
-  { label: '편한 경로', color: colors.green },
-  { label: '도보 적은 경로', color: '#E67E22' },
-  { label: '환승 대안', color: '#7C5CFF' },
-  { label: '우회 경로', color: colors.muted },
+const routeLabels: { label: string; color: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { label: '빠른 경로', color: colors.blue, icon: 'flash' },
+  { label: '편한 경로', color: colors.green, icon: 'heart' },
+  { label: '도보 적은 경로', color: '#E67E22', icon: 'walk' },
+  { label: '환승 대안', color: '#7C5CFF', icon: 'repeat' },
+  { label: '우회 경로', color: colors.muted, icon: 'time-outline' },
 ];
 
 function firstParam(value: string | string[] | undefined) {
@@ -87,53 +91,68 @@ function RouteCard({
   const longTransferCount = route.segments.filter((segment) => segment.isTransfer && isLongTransferSegment(segment)).length;
 
   return (
-    <Link href={routeDetailPath(index, from, to, via) as Href} asChild>
-      <Pressable style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
-        <View style={styles.cardMain}>
-          <Text style={[styles.cardLabel, { color: label.color }]}>{label.label}</Text>
-          <View style={styles.timeRow}>
-            <Text style={styles.timeText}>{route.totalTime}분</Text>
-            <Text style={styles.arrivalText}>도착 {calculateArrivalTime(route.totalTime)}</Text>
-          </View>
+    <Animated.View entering={slideUp(stagger(index, 100))}>
+      <FloatingView cycle={8000} delay={index * 420}>
+        <Link href={routeDetailPath(index, from, to, via) as Href} asChild>
+          <Pressable style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
+            <View style={styles.cardMain}>
+              <View style={styles.labelRow}>
+                <Ionicons name={label.icon} size={14} color={label.color} />
+                <Text style={[styles.cardLabel, { color: label.color }]}>{label.label}</Text>
+              </View>
 
-          <View style={styles.badgeRow}>
-            {rideSegments.map((segment, segmentIndex) => (
-              <LineBadge key={`${segment.lineId}-${segmentIndex}`} lineId={segment.lineId} />
-            ))}
-          </View>
+              <View style={styles.timeRow}>
+                <Text style={styles.timeText}>{route.totalTime}분</Text>
+                <Text style={styles.arrivalText}>도착 {calculateArrivalTime(route.totalTime)}</Text>
+              </View>
 
-          {patternSegments.length > 0 ? (
-            <View style={styles.patternRow}>
-              {patternSegments.map((segment, segmentIndex) => {
-                const line = getLineInfo(segment.lineId);
-                return (
-                  <View key={`${segment.lineId}-pattern-${segmentIndex}`} style={styles.patternItem}>
-                    <View style={[styles.patternDot, { backgroundColor: line?.color ?? colors.muted }]} />
-                    <Text style={styles.patternText}>{segment.pattern!.label}</Text>
+              <View style={styles.badgeRow}>
+                {rideSegments.map((segment, segmentIndex) => (
+                  <View key={`${segment.lineId}-${segmentIndex}`} style={styles.badgeItem}>
+                    {segmentIndex > 0 ? <View style={styles.badgeConnector} /> : null}
+                    <LineBadge lineId={segment.lineId} />
                   </View>
-                );
-              })}
+                ))}
+              </View>
+
+              {patternSegments.length > 0 ? (
+                <View style={styles.patternRow}>
+                  {patternSegments.map((segment, segmentIndex) => {
+                    const line = getLineInfo(segment.lineId);
+                    return (
+                      <View key={`${segment.lineId}-pattern-${segmentIndex}`} style={styles.patternItem}>
+                        <View style={[styles.patternDot, { backgroundColor: line?.color ?? colors.muted }]} />
+                        <Text style={styles.patternText}>{segment.pattern!.label}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
+
+              <View style={styles.infoRow}>
+                <View style={styles.infoItem}>
+                  <Ionicons name="repeat" size={12} color={colors.subtleText} />
+                  <Text style={styles.metaText}>환승 {route.transferCount}회</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Ionicons name="remove" size={12} color={colors.subtleText} />
+                  <Text style={styles.metaText}>{route.stationCount}개 역</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Ionicons name="walk" size={12} color={colors.subtleText} />
+                  <Text style={styles.metaText}>환승 이동 {route.walkTime}분</Text>
+                </View>
+                {longTransferCount > 0 ? (
+                  <Text style={styles.warningPill}>긴 환승 {longTransferCount}개</Text>
+                ) : null}
+                <Text style={styles.fareText}>₩{route.fare.toLocaleString()}</Text>
+              </View>
             </View>
-          ) : null}
-
-          <View style={styles.metaRow}>
-            <Text style={styles.metaText}>환승 {route.transferCount}회</Text>
-            <Text style={styles.metaText}>{route.stationCount}개 역</Text>
-            <Text style={styles.metaText}>환승 이동 {route.walkTime}분</Text>
-          </View>
-
-          <View style={styles.bottomRow}>
-            {longTransferCount > 0 ? (
-              <Text style={styles.warningPill}>긴 환승 {longTransferCount}개</Text>
-            ) : (
-              <Text style={styles.softPill}>일반 환승</Text>
-            )}
-            <Text style={styles.fareText}>₩{route.fare.toLocaleString()}</Text>
-          </View>
-        </View>
-        <Text style={styles.chevron}>›</Text>
-      </Pressable>
-    </Link>
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} style={styles.chevron} />
+          </Pressable>
+        </Link>
+      </FloatingView>
+    </Animated.View>
   );
 }
 
@@ -250,9 +269,14 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.sm,
   },
+  labelRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 5,
+  },
   cardLabel: {
     fontSize: 12,
-    fontWeight: '900',
+    fontWeight: '800',
   },
   timeRow: {
     alignItems: 'baseline',
@@ -270,9 +294,21 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   badgeRow: {
+    alignItems: 'center',
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 5,
+  },
+  badgeItem: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 5,
+  },
+  badgeConnector: {
+    backgroundColor: '#E0E0E0',
+    borderRadius: 1,
+    height: 2,
+    width: 16,
   },
   lineBadge: {
     alignItems: 'center',
@@ -306,48 +342,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
-  metaRow: {
+  infoRow: {
+    alignItems: 'center',
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
+  },
+  infoItem: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
   },
   metaText: {
     color: colors.subtleText,
     fontSize: 13,
     fontWeight: '700',
   },
-  bottomRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
   warningPill: {
     backgroundColor: '#FFF1E7',
     borderRadius: radii.pill,
     color: '#C15B1B',
     fontSize: 12,
-    fontWeight: '900',
+    fontWeight: '800',
     paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
-  },
-  softPill: {
-    backgroundColor: '#EAF7EF',
-    borderRadius: radii.pill,
-    color: colors.green,
-    fontSize: 12,
-    fontWeight: '900',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
+    paddingVertical: 3,
   },
   fareText: {
     color: colors.text,
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
+    marginLeft: 'auto',
   },
   chevron: {
-    color: colors.muted,
-    fontSize: 36,
-    fontWeight: '300',
+    alignSelf: 'center',
   },
   emptyCard: {
     backgroundColor: colors.surface,
