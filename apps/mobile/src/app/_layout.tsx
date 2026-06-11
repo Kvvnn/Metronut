@@ -1,17 +1,38 @@
+import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { applyGlobalFont } from '@/lib/apply-global-font';
+import { fontAssets } from '@/lib/fonts';
 import { initializeNotifications } from '@/lib/notifications';
 import { colors } from '@/lib/theme';
 
+// 첫 렌더 전에 전역 Pretendard 패치를 설치한다.
+applyGlobalFont();
+SplashScreen.preventAutoHideAsync();
+
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts(fontAssets);
+
   useEffect(() => {
     initializeNotifications();
   }, []);
 
+  const onReady = useCallback(() => {
+    if (fontsLoaded || fontError) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, fontError]);
+
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
+
   return (
-    <>
+    <GestureHandlerRootView style={{ flex: 1 }} onLayout={onReady}>
       <Stack
         screenOptions={{
           contentStyle: { backgroundColor: colors.background },
@@ -30,6 +51,6 @@ export default function RootLayout() {
         <Stack.Screen name="station/[name]" options={{ title: '역 정보' }} />
       </Stack>
       <StatusBar style="dark" />
-    </>
+    </GestureHandlerRootView>
   );
 }

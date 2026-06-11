@@ -21,14 +21,15 @@ cd apps/mobile && npx tsc --noEmit && npx expo lint && npx expo-doctor
 
 ---
 
-## Phase 1 — 디자인 기반(폰트·공통 컴포넌트·애니메이션)
+## Phase 1 — 디자인 기반(폰트·공통 컴포넌트·애니메이션) ✅
 **왜 먼저:** 이후 모든 페이즈가 이 위에 쌓인다.
-- [ ] Pretendard Variable 폰트 추가(`expo-font`) → 웹과 동일 서체. `typography`에 fontFamily 연결
-- [ ] `PressableScale` 공통 컴포넌트(웹 `.btn-press` = 눌렀을 때 scale 0.97, ease-out-expo)
-- [ ] `BottomSheet` 공통 컴포넌트: **실제 드래그 제스처**(react-native-gesture-handler + reanimated), collapse/expand, 핸들바
-- [ ] 등장 애니메이션 헬퍼(fade/slide-up, 웹 framer-motion ease `[0.23,1,0.32,1]` 대응)
-- [ ] iOS 카드/구분선/배지 등 공통 UI 프리미티브 정리
-**완료 기준:** 폰트가 웹과 같게 보이고, 공통 시트/버튼이 데모에서 동작.
+- [x] Pretendard 폰트 추가(`expo-font`, 6개 정적 굵기 OTF) → 웹과 동일 서체. `lib/fonts.ts` weight→family 매핑 + `apply-global-font.ts` 가 Text/TextInput 전역 치환
+- [x] `PressableScale` 공통 컴포넌트(웹 `.btn-press` = 눌렀을 때 scale 0.97, ease-out-expo)
+- [x] `BottomSheet` 공통 컴포넌트: **실제 드래그 제스처**(react-native-gesture-handler Pan + reanimated spring), collapse/expand 스냅, 핸들바
+- [x] 등장 애니메이션 헬퍼(`lib/animations.ts`: fade/slideUp/stagger, 웹 ease `[0.23,1,0.32,1]` = `easeOutExpo`)
+- [x] iOS 공통 UI 프리미티브: `Card` / `Divider` / `Badge` (`components/ui/`)
+- [x] 루트에 `GestureHandlerRootView` + `useFonts` 게이트 + 스플래시 제어
+**완료 기준:** 폰트가 웹과 같게 보이고, 공통 시트/버튼이 데모에서 동작. → tsc/lint 통과, 컴포넌트 준비 완료(다음 페이즈에서 화면 적용).
 
 ## Phase 2 — 홈 마무리
 - [ ] 하단 즐겨찾기 시트를 Phase 1 `BottomSheet`로 교체(탭 토글 → 진짜 드래그)
