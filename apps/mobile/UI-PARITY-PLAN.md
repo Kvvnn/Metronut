@@ -64,11 +64,12 @@ cd apps/mobile && npx tsc --noEmit && npx expo lint && npx expo-doctor
 **완료 기준:** 설정 화면이 웹과 동일. → tsc/lint 통과.
 
 ## Phase 7 — 탑승 안내(Riding) ※ 가장 큼, 2개로 분할 가능
-**7a 레이아웃/안내**
-- [ ] 상단 sticky 미니 네비, 스크롤 안내 UI, 진행 레일 + 열차 마커, 구간 진행률
+**7a 레이아웃/안내** ✅
+- [x] 상단 **sticky 미니 네비**(스크롤해도 여정/구간 고정), 진행 레일 + **열차 마커**(레일 위 열차 아이콘 핀), 구간 진행률
 **7b 열차 선택 드로어 + 환승**
-- [ ] 하단 드래그 열차 선택 드로어(Phase 1 시트), 환승 미니시트, 미리선택 패널
-**완료 기준:** 탑승 안내가 웹과 동일(상호작용 포함).
+- [x] 미리선택 패널(`preTransferCard` — 환승 전 다음 노선 열차 미리 선택), 환승 안내(active/transfer 카드 + `TransferNotice`) — 기존 구현
+- [ ] 하단 **드래그 열차 선택 드로어**(Phase 1 시트로 전환) — **보류**: 현재 인라인 '열차 후보' 리스트가 기능 동일. 드로어 전환 + 별 흐름(`Starfield`/`VoyageTrack`)은 온디바이스 튜닝 필요 → **Phase 8**과 함께 처리
+**완료 기준:** 탑승 안내가 웹과 동일(상호작용 포함). → 7a 충족, 7b 기능 충족(드로어 비주얼만 Phase 8). tsc/lint 통과.
 
 ## Phase 8 — 우주 테마 연출 & 마이크로 인터랙션
 - [ ] `Starfield`, `VoyageTrack`을 `react-native-svg`(또는 Skia)로 이식

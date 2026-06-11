@@ -622,22 +622,27 @@ export default function RidingScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={loadingTrains} onRefresh={() => void refreshTrainPositions()} tintColor={colors.accent} />}
-    >
+    <View style={styles.screen}>
       <Stack.Screen options={{ title: '탑승 안내' }} />
 
-      <View style={styles.header}>
-        <Text style={styles.kicker}>Riding</Text>
-        <Text style={styles.title}>
-          {route.overallFromStation} → {route.overallToStation}
-        </Text>
-        <Text style={styles.subtitle}>
-          {rideCount.total > 0 ? `${rideCount.current}/${rideCount.total}번째 탑승 구간` : '탑승 구간 확인 중'}
-        </Text>
+      {/* 상단 sticky 미니 네비 — 스크롤해도 현재 여정/구간이 고정 노출 */}
+      <View style={styles.miniNav}>
+        <View style={styles.miniNavCopy}>
+          <Text style={styles.miniNavRoute} numberOfLines={1}>
+            {route.overallFromStation} → {route.overallToStation}
+          </Text>
+          <Text style={styles.miniNavMeta}>
+            {rideCount.total > 0 ? `${rideCount.current}/${rideCount.total}번째 탑승 구간` : '탑승 구간 확인 중'}
+          </Text>
+        </View>
+        {currentRideSegment ? <LineBadge lineId={currentRideSegment.lineId} /> : null}
       </View>
+
+      <ScrollView
+        style={styles.scrollBody}
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={loadingTrains} onRefresh={() => void refreshTrainPositions()} tintColor={colors.accent} />}
+      >
 
       {currentSegment?.type === 'transfer' ? (
         <View style={styles.activeCard}>
@@ -667,8 +672,13 @@ export default function RidingScreen() {
             {remainingStations > 0 ? `${currentRideSegment?.toStationName}까지 ${remainingStations}개 역 남음` : '도착역입니다'}
           </Text>
 
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: line?.color ?? colors.accent }]} />
+          <View style={styles.railWrap}>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: line?.color ?? colors.accent }]} />
+            </View>
+            <View style={[styles.trainMarker, { left: `${progress * 100}%`, borderColor: line?.color ?? colors.accent }]}>
+              <Ionicons name="train" size={10} color={line?.color ?? colors.accent} />
+            </View>
           </View>
 
           <View style={styles.controlRow}>
@@ -850,7 +860,8 @@ export default function RidingScreen() {
           })}
         </View>
       ) : null}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -859,27 +870,43 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  scrollBody: {
+    flex: 1,
+  },
   content: {
     gap: spacing.md,
     padding: spacing.lg,
     paddingBottom: 48,
   },
-  header: {
-    gap: spacing.xs,
+  miniNav: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    shadowColor: '#1B2838',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  kicker: {
-    color: colors.accent,
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
+  miniNavCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
   },
-  title: {
-    ...typography.title,
+  miniNavRoute: {
     color: colors.text,
+    fontSize: 16,
+    fontWeight: '800',
   },
-  subtitle: {
-    ...typography.body,
+  miniNavMeta: {
     color: colors.subtleText,
+    fontSize: 12,
+    fontWeight: '700',
   },
   activeCard: {
     backgroundColor: colors.surface,
@@ -920,6 +947,10 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.subtleText,
   },
+  railWrap: {
+    height: 20,
+    justifyContent: 'center',
+  },
   progressTrack: {
     backgroundColor: '#F0F1F4',
     borderRadius: radii.pill,
@@ -929,6 +960,22 @@ const styles = StyleSheet.create({
   progressFill: {
     borderRadius: radii.pill,
     height: 8,
+  },
+  trainMarker: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radii.pill,
+    borderWidth: 2,
+    height: 20,
+    justifyContent: 'center',
+    marginLeft: -10,
+    position: 'absolute',
+    width: 20,
+    shadowColor: '#1B2838',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+    elevation: 3,
   },
   controlRow: {
     flexDirection: 'row',
