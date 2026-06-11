@@ -8,18 +8,38 @@ import {
   findRoutes,
   findRoutesVia,
   getLineInfo,
+  involvesScheduledLine,
   isLongTransferSegment,
   type Route,
 } from '@shared/metro/pathfinder';
-import { buildServiceErrorCopy, getRouteServiceError } from '@shared/metro/routeServiceWindow';
+import {
+  buildServiceErrorCopy,
+  getLastDepartureForJourney,
+  getRouteServiceError,
+  type RouteServiceErrorCopy,
+} from '@shared/metro/routeServiceWindow';
+import { formatServiceMinute } from '@shared/metro/serviceSchedule';
 
-import { colors, radii, spacing, typography } from '@/lib/theme';
+import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
+
+/** 시간인지 탐색이 막차로 도달 불가라고 판단했을 때의 안내 문구. */
+function buildLastTrainNotice(from: string, to: string): RouteServiceErrorCopy {
+  const lastMin = getLastDepartureForJourney(from, to, new Date());
+  return {
+    title: '막차가 끊겼습니다',
+    description:
+      lastMin != null
+        ? `${from}에서 ${to} 방면으로 가는 막차는 ${formatServiceMinute(lastMin)}에 출발했습니다.`
+        : `${from}에서 ${to} 방면으로 가는 막차가 이미 종료되었습니다.`,
+    hint: '이 시간대에는 운행계통(행선지)이 달라 해당 구간에 도달할 수 없습니다.',
+  };
+}
 
 const routeLabels = [
   { label: '빠른 경로', color: colors.blue },
   { label: '편한 경로', color: colors.green },
-  { label: '도보 적은 경로', color: '#C2681B' },
-  { label: '환승 대안', color: '#6F58D9' },
+  { label: '도보 적은 경로', color: '#E67E22' },
+  { label: '환승 대안', color: '#7C5CFF' },
   { label: '우회 경로', color: colors.muted },
 ];
 
@@ -63,6 +83,7 @@ function RouteCard({
 }) {
   const label = routeLabels[index] ?? routeLabels[routeLabels.length - 1];
   const rideSegments = route.segments.filter((segment) => !segment.isTransfer);
+  const patternSegments = rideSegments.filter((segment) => segment.pattern);
   const longTransferCount = route.segments.filter((segment) => segment.isTransfer && isLongTransferSegment(segment)).length;
 
   return (
@@ -80,6 +101,20 @@ function RouteCard({
               <LineBadge key={`${segment.lineId}-${segmentIndex}`} lineId={segment.lineId} />
             ))}
           </View>
+
+          {patternSegments.length > 0 ? (
+            <View style={styles.patternRow}>
+              {patternSegments.map((segment, segmentIndex) => {
+                const line = getLineInfo(segment.lineId);
+                return (
+                  <View key={`${segment.lineId}-pattern-${segmentIndex}`} style={styles.patternItem}>
+                    <View style={[styles.patternDot, { backgroundColor: line?.color ?? colors.muted }]} />
+                    <Text style={styles.patternText}>{segment.pattern!.label}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
 
           <View style={styles.metaRow}>
             <Text style={styles.metaText}>환승 {route.transferCount}회</Text>
@@ -108,19 +143,32 @@ export default function RouteResultScreen() {
   const via = firstParam(params.via);
   const to = firstParam(params.to);
 
-  const { routes, serviceError } = useMemo(() => {
-    if (!from || !to) return { routes: [] as Route[], serviceError: null };
+  const { routes, serviceError, timedNotice } = useMemo(() => {
+    if (!from || !to) return { routes: [] as Route[], serviceError: null, timedNotice: null };
+
+    const now = new Date();
+    // 전 노선에 운행계통 스케줄이 있어 막차·배차를 반영한 시간인지 탐색을 기본으로 쓴다.
+    if (involvesScheduledLine(from, via || undefined, to)) {
+      const found = via
+        ? findRoutesVia(from, via, to, { departAt: now })
+        : findRoutes(from, to, { departAt: now });
+      return {
+        routes: found,
+        serviceError: null,
+        timedNotice: found.length === 0 ? buildLastTrainNotice(from, to) : null,
+      };
+    }
 
     const found = via ? findRoutesVia(from, via, to) : findRoutes(from, to);
-    const now = new Date();
     const available = found.filter((route) => !getRouteServiceError(route, now));
     return {
       routes: available,
       serviceError: found.length > 0 && available.length === 0 ? getRouteServiceError(found[0], now) : null,
+      timedNotice: null,
     };
   }, [from, to, via]);
 
-  const serviceErrorCopy = serviceError ? buildServiceErrorCopy(serviceError) : null;
+  const serviceErrorCopy = timedNotice ?? (serviceError ? buildServiceErrorCopy(serviceError) : null);
   const title = from && to ? `${from} → ${via ? `${via} → ` : ''}${to}` : '경로 후보';
 
   return (
@@ -193,6 +241,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     padding: spacing.lg,
+    ...cardShadow,
   },
   pressed: {
     opacity: 0.74,
@@ -237,6 +286,26 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
   },
+  patternRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  patternItem: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 5,
+  },
+  patternDot: {
+    borderRadius: radii.pill,
+    height: 6,
+    width: 6,
+  },
+  patternText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '800',
+  },
   metaRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -255,14 +324,14 @@ const styles = StyleSheet.create({
   warningPill: {
     backgroundColor: '#FFF1E7',
     borderRadius: radii.pill,
-    color: '#A64E16',
+    color: '#C15B1B',
     fontSize: 12,
     fontWeight: '900',
     paddingHorizontal: spacing.sm,
     paddingVertical: 5,
   },
   softPill: {
-    backgroundColor: '#E7F0EA',
+    backgroundColor: '#EAF7EF',
     borderRadius: radii.pill,
     color: colors.green,
     fontSize: 12,

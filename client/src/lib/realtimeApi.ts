@@ -112,6 +112,9 @@ export interface TrainPosition {
   trainStatus: string;
   destination: string;
   receivedAt: string;
+  receivedAtEpochMs?: number;
+  receivedAtAgeSeconds?: number;
+  isStale?: boolean;
   /** 급행여부 (directAt): "일반" | "급행" | "특급" */
   trainType: string;
 }
@@ -123,6 +126,10 @@ export async function getTrainPositions(
   isSimulated: boolean;
   errorCode?: string;
   errorMessage?: string;
+  stalePositionCount?: number;
+  freshestReceivedAt?: string;
+  freshestReceivedAtAgeSeconds?: number;
+  staleAfterSeconds?: number;
 }> {
   if (getUseSimulatedTrainData()) {
     return {

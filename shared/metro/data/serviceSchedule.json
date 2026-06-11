@@ -1,98 +1,2955 @@
 {
   "_note": "노선별 운행계통(행선지) 스케줄. 각 패턴은 방향(up=index 감소/당고개 방면, down=index 증가/오이도 방면)과 운행구간(coverage: 본선 index 범위), 그리고 origin(출발 종착역) 기준 출발 시각표를 가진다. 특정 역의 통과/도착 시각은 origin에서 minPerStation×역수만큼 더해 추정한다.",
-  "_disclaimer": "참고용. 평일/주말 막차 종착 변이는 서울교통공사/코레일 역별 공식 시간표(사당·오이도 실측) 기반으로 정리한 평균치이며, 정확한 시각은 현장 안내를 따른다. 분기·급행·임시열차는 단순화.",
+  "_disclaimer": "1~9호선은 서울교통공사 역별 열차시간표(요일 1평일/3일·공휴일) 실측 기반 자동 생성. 패턴별 실제 첫차/막차/배차와 실측 minPerStation, 심야 단축운행(단발 trips) 포함. 코레일/민자 노선(경의중앙·공항·신분당·경춘·수인분당·우이신설·인천1/2·김포·서해·신림·GTX-A)은 공식 시간표 미수집분으로 기존 근사치 유지. 급행은 별도 가상노선으로 모델링. 정확한 시각은 현장 안내를 따른다.",
   "_sources": [
-    "metro-time-info.appspot.com 사당역/오이도역 4호선 첫차·막차",
-    "ko.wikipedia.org 수도권 전철 4호선"
+    "서울교통공사_역코드로 지하철 열차 시간표 검색.csv (1~9호선 역별 실측)",
+    "코레일/민자 노선: shared/metro/data/firstLastTrain.json baseline + 공개 배차 근사"
   ],
   "lines": {
-    "4": {
-      "name": "4호선",
-      "minPerStation": 2.65,
-      "stationIndex": {
-        "당고개": 0, "한성대입구": 10, "사당": 24, "남태령": 25,
-        "금정": 34, "산본": 35, "안산": 44, "정왕": 46, "오이도": 47
-      },
+    "1": {
+      "name": "1호선",
+      "minPerStation": 2.5,
       "patterns": [
         {
-          "id": "4u-danggogae",
+          "id": "1-u-0",
+          "label": "용산행",
+          "direction": "up",
+          "originIndex": 60,
+          "terminusIndex": 35,
+          "weekday": {
+            "first": "05:27",
+            "last": "22:13",
+            "headwayMin": 10
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "22:51",
+            "headwayMin": 14
+          }
+        },
+        {
+          "id": "1-d-1",
+          "label": "동인천행",
+          "direction": "down",
+          "originIndex": 35,
+          "terminusIndex": 60,
+          "weekday": {
+            "first": "05:35",
+            "last": "22:53",
+            "headwayMin": 11
+          },
+          "weekend": {
+            "first": "05:52",
+            "last": "22:53",
+            "headwayMin": 14
+          }
+        },
+        {
+          "id": "1-d-2",
+          "label": "병점행",
+          "direction": "down",
+          "originIndex": 19,
+          "terminusIndex": 77,
+          "weekday": {
+            "first": "05:12",
+            "last": "22:47",
+            "headwayMin": 20.5
+          },
+          "weekend": {
+            "first": "05:24",
+            "last": "22:49",
+            "headwayMin": 20
+          }
+        },
+        {
+          "id": "1-u-3",
+          "label": "광운대행",
+          "direction": "up",
+          "originIndex": 77,
+          "terminusIndex": 19,
+          "weekday": {
+            "first": "05:04",
+            "last": "22:16",
+            "headwayMin": 20
+          },
+          "weekend": {
+            "first": "05:04",
+            "last": "22:19",
+            "headwayMin": 23
+          }
+        },
+        {
+          "id": "1-u-4",
+          "label": "소요산행",
+          "direction": "up",
+          "originIndex": 61,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:32",
+            "last": "22:04",
+            "headwayMin": 20
+          },
+          "weekend": {
+            "first": "05:22",
+            "last": "21:55",
+            "headwayMin": 22
+          }
+        },
+        {
+          "id": "1-d-5",
+          "label": "인천행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 61,
+          "weekday": {
+            "first": "05:15",
+            "last": "21:60",
+            "headwayMin": 17.5
+          },
+          "weekend": {
+            "first": "05:15",
+            "last": "21:49",
+            "headwayMin": 15.5
+          }
+        },
+        {
+          "id": "1-u-6",
+          "label": "양주행",
+          "direction": "up",
+          "originIndex": 61,
+          "terminusIndex": 7,
+          "weekday": {
+            "first": "06:54",
+            "last": "22:11",
+            "headwayMin": 24.5
+          },
+          "weekend": {
+            "first": "05:00",
+            "last": "22:15",
+            "headwayMin": 21
+          }
+        },
+        {
+          "id": "1-d-7",
+          "label": "인천행",
+          "direction": "down",
+          "originIndex": 7,
+          "terminusIndex": 61,
+          "weekday": {
+            "first": "05:04",
+            "last": "20:50",
+            "headwayMin": 19.5
+          },
+          "weekend": {
+            "first": "05:12",
+            "last": "21:55",
+            "headwayMin": 22
+          }
+        },
+        {
+          "id": "1-d-8",
+          "label": "천안행",
+          "direction": "down",
+          "originIndex": 24,
+          "terminusIndex": 89,
+          "weekday": {
+            "first": "06:33",
+            "last": "22:01",
+            "headwayMin": 18
+          },
+          "weekend": {
+            "first": "06:33",
+            "last": "21:36",
+            "headwayMin": 23
+          }
+        },
+        {
+          "id": "1-u-9",
+          "label": "의정부행",
+          "direction": "up",
+          "originIndex": 61,
+          "terminusIndex": 10,
+          "weekday": {
+            "first": "06:38",
+            "last": "22:24",
+            "headwayMin": 26
+          },
+          "weekend": {
+            "first": "06:37",
+            "last": "22:26",
+            "headwayMin": 19.5
+          }
+        },
+        {
+          "id": "1-u-10",
+          "label": "청량리행",
+          "direction": "up",
+          "originIndex": 89,
+          "terminusIndex": 24,
+          "weekday": {
+            "first": "05:01",
+            "last": "20:39",
+            "headwayMin": 19
+          },
+          "weekend": {
+            "first": "05:01",
+            "last": "20:18",
+            "headwayMin": 23
+          }
+        },
+        {
+          "id": "1-u-11",
+          "label": "영등포행",
+          "direction": "up",
+          "originIndex": 64,
+          "terminusIndex": 39,
+          "weekday": {
+            "trips": [
+              "06:36",
+              "07:53",
+              "08:25",
+              "09:45",
+              "10:19",
+              "11:21",
+              "11:56",
+              "13:06",
+              "13:45",
+              "14:34",
+              "15:31",
+              "16:24",
+              "17:23",
+              "18:28",
+              "19:40",
+              "20:16",
+              "21:27",
+              "22:04",
+              "23:04",
+              "23:45"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "06:36",
+              "07:53",
+              "08:25",
+              "09:45",
+              "10:19",
+              "11:21",
+              "11:56",
+              "13:06",
+              "13:45",
+              "14:34",
+              "15:31",
+              "16:24",
+              "17:23",
+              "18:28",
+              "19:40",
+              "20:16",
+              "21:27",
+              "22:04",
+              "23:04",
+              "23:45"
+            ]
+          }
+        },
+        {
+          "id": "1-d-12",
+          "label": "신창행",
+          "direction": "down",
+          "originIndex": 19,
+          "terminusIndex": 95,
+          "weekday": {
+            "first": "06:56",
+            "last": "21:06",
+            "headwayMin": 24
+          },
+          "weekend": {
+            "first": "06:34",
+            "last": "19:58",
+            "headwayMin": 22
+          }
+        },
+        {
+          "id": "1-d-13",
+          "label": "인천행",
+          "direction": "down",
+          "originIndex": 10,
+          "terminusIndex": 61,
+          "weekday": {
+            "first": "05:05",
+            "last": "22:40",
+            "headwayMin": 23
+          },
+          "weekend": {
+            "first": "05:08",
+            "last": "22:33",
+            "headwayMin": 19
+          }
+        },
+        {
+          "id": "1-u-14",
+          "label": "광운대행",
+          "direction": "up",
+          "originIndex": 89,
+          "terminusIndex": 19,
+          "weekday": {
+            "first": "05:36",
+            "last": "21:52",
+            "headwayMin": 19.5
+          },
+          "weekend": {
+            "first": "05:40",
+            "last": "20:39",
+            "headwayMin": 20.5
+          }
+        },
+        {
+          "id": "1-u-15",
+          "label": "광운대행",
+          "direction": "up",
+          "originIndex": 95,
+          "terminusIndex": 19,
+          "weekday": {
+            "first": "05:00",
+            "last": "20:19",
+            "headwayMin": 21.5
+          },
+          "weekend": {
+            "first": "05:00",
+            "last": "20:35",
+            "headwayMin": 24.5
+          }
+        },
+        {
+          "id": "1-u-16",
+          "label": "동두천행",
+          "direction": "up",
+          "originIndex": 61,
+          "terminusIndex": 1,
+          "weekday": {
+            "first": "05:00",
+            "last": "21:07",
+            "headwayMin": 13
+          },
+          "weekend": {
+            "trips": [
+              "05:10",
+              "06:10",
+              "07:17",
+              "08:15",
+              "09:15",
+              "10:17",
+              "11:19",
+              "12:21",
+              "13:12",
+              "15:14",
+              "17:09",
+              "18:43",
+              "19:51",
+              "21:05"
+            ]
+          }
+        },
+        {
+          "id": "1-d-17",
+          "label": "천안행",
+          "direction": "down",
+          "originIndex": 19,
+          "terminusIndex": 89,
+          "weekday": {
+            "first": "06:13",
+            "last": "20:19",
+            "headwayMin": 24
+          },
+          "weekend": {
+            "first": "05:58",
+            "last": "21:50",
+            "headwayMin": 17
+          }
+        },
+        {
+          "id": "1-d-18",
+          "label": "신창행",
+          "direction": "down",
+          "originIndex": 24,
+          "terminusIndex": 95,
+          "weekday": {
+            "first": "05:59",
+            "last": "21:39",
+            "headwayMin": 21
+          },
+          "weekend": {
+            "first": "07:37",
+            "last": "21:08",
+            "headwayMin": 15.5
+          }
+        },
+        {
+          "id": "1-u-19",
+          "label": "청량리행",
+          "direction": "up",
+          "originIndex": 77,
+          "terminusIndex": 24,
+          "weekday": {
+            "first": "05:12",
+            "last": "23:00",
+            "headwayMin": 18
+          },
+          "weekend": {
+            "first": "05:15",
+            "last": "07:02",
+            "headwayMin": 18
+          }
+        },
+        {
+          "id": "1-d-20",
+          "label": "인천행",
+          "direction": "down",
+          "originIndex": 41,
+          "terminusIndex": 61,
+          "weekday": {
+            "first": "05:00",
+            "last": "16:04",
+            "headwayMin": 22
+          },
+          "weekend": {
+            "trips": [
+              "05:00",
+              "05:35",
+              "08:34",
+              "09:18",
+              "10:04",
+              "14:03",
+              "17:55",
+              "19:32",
+              "21:28"
+            ]
+          }
+        },
+        {
+          "id": "1-d-21",
+          "label": "천안행",
+          "direction": "down",
+          "originIndex": 41,
+          "terminusIndex": 89,
+          "weekday": {
+            "first": "05:00",
+            "last": "17:12",
+            "headwayMin": 24.5
+          },
+          "weekend": {
+            "trips": [
+              "05:00",
+              "05:32",
+              "06:32",
+              "08:08"
+            ]
+          }
+        },
+        {
+          "id": "1-u-22",
+          "label": "구로행",
+          "direction": "up",
+          "originIndex": 77,
+          "terminusIndex": 41,
+          "weekday": {
+            "first": "08:02",
+            "last": "23:41",
+            "headwayMin": 20
+          },
+          "weekend": {
+            "first": "20:08",
+            "last": "23:41",
+            "headwayMin": 20
+          }
+        },
+        {
+          "id": "1-u-23",
+          "label": "광운대행",
+          "direction": "up",
+          "originIndex": 61,
+          "terminusIndex": 19,
+          "weekday": {
+            "first": "13:21",
+            "last": "22:51",
+            "headwayMin": 14
+          },
+          "weekend": {
+            "first": "08:08",
+            "last": "22:51",
+            "headwayMin": 21
+          }
+        },
+        {
+          "id": "1-u-24",
+          "label": "동묘앞행",
+          "direction": "up",
+          "originIndex": 61,
+          "terminusIndex": 27,
+          "weekday": {
+            "first": "08:05",
+            "last": "23:13",
+            "headwayMin": 22
+          },
+          "weekend": {
+            "first": "16:06",
+            "last": "21:14",
+            "headwayMin": 18
+          }
+        },
+        {
+          "id": "1-d-25",
+          "label": "구로행",
+          "direction": "down",
+          "originIndex": 35,
+          "terminusIndex": 41,
+          "weekday": {
+            "first": "08:29",
+            "last": "21:10",
+            "headwayMin": 15
+          },
+          "weekend": {
+            "trips": [
+              "12:54",
+              "13:44",
+              "14:59",
+              "23:24"
+            ]
+          }
+        },
+        {
+          "id": "1-u-26",
+          "label": "구로행",
+          "direction": "up",
+          "originIndex": 61,
+          "terminusIndex": 41,
+          "weekday": {
+            "first": "10:05",
+            "last": "23:42",
+            "headwayMin": 20.5
+          },
+          "weekend": {
+            "first": "14:13",
+            "last": "23:34",
+            "headwayMin": 15
+          }
+        },
+        {
+          "id": "1-u-27",
+          "label": "소요산행",
+          "direction": "up",
+          "originIndex": 19,
+          "terminusIndex": 0,
+          "weekday": {
+            "trips": [
+              "05:02",
+              "05:33",
+              "06:01"
+            ]
+          },
+          "weekend": {
+            "first": "05:05",
+            "last": "19:08",
+            "headwayMin": 22
+          }
+        },
+        {
+          "id": "1-d-28",
+          "label": "광운대행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 19,
+          "weekday": {
+            "first": "09:35",
+            "last": "23:48",
+            "headwayMin": 16.5
+          },
+          "weekend": {
+            "first": "15:55",
+            "last": "23:49",
+            "headwayMin": 21.5
+          }
+        },
+        {
+          "id": "1-d-29",
+          "label": "신창행",
+          "direction": "down",
+          "originIndex": 77,
+          "terminusIndex": 95,
+          "weekday": {
+            "first": "05:00",
+            "last": "17:48",
+            "headwayMin": 16.5
+          },
+          "weekend": {
+            "first": "05:00",
+            "last": "16:35",
+            "headwayMin": 28
+          }
+        },
+        {
+          "id": "1-u-30",
+          "label": "병점행",
+          "direction": "up",
+          "originIndex": 95,
+          "terminusIndex": 77,
+          "weekday": {
+            "trips": [
+              "19:20",
+              "21:06",
+              "21:39",
+              "22:42",
+              "23:17"
+            ]
+          },
+          "weekend": {
+            "first": "19:25",
+            "last": "23:07",
+            "headwayMin": 24
+          }
+        },
+        {
+          "id": "1-d-31",
+          "label": "구로행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 41,
+          "weekday": {
+            "trips": [
+              "08:53",
+              "09:54",
+              "10:49",
+              "12:55",
+              "20:30"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "06:47",
+              "14:32",
+              "22:44"
+            ]
+          }
+        },
+        {
+          "id": "1-u-32",
+          "label": "구로행",
+          "direction": "up",
+          "originIndex": 95,
+          "terminusIndex": 41,
+          "weekday": {
+            "first": "08:11",
+            "last": "22:14",
+            "headwayMin": 17
+          },
+          "weekend": {
+            "trips": [
+              "21:38",
+              "21:55",
+              "22:14"
+            ]
+          }
+        },
+        {
+          "id": "1-d-33",
+          "label": "신창행",
+          "direction": "down",
+          "originIndex": 41,
+          "terminusIndex": 95,
+          "weekday": {
+            "trips": [
+              "05:18",
+              "06:43",
+              "12:16",
+              "15:50"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "05:17",
+              "05:48",
+              "06:21"
+            ]
+          }
+        },
+        {
+          "id": "1-d-34",
+          "label": "부평행",
+          "direction": "down",
+          "originIndex": 35,
+          "terminusIndex": 52,
+          "weekday": {
+            "first": "06:59",
+            "last": "23:09",
+            "headwayMin": 19
+          },
+          "weekend": {
+            "trips": [
+              "23:10"
+            ]
+          }
+        },
+        {
+          "id": "1-d-35",
+          "label": "구로행",
+          "direction": "down",
+          "originIndex": 7,
+          "terminusIndex": 41,
+          "weekday": {
+            "trips": [
+              "09:46",
+              "22:41",
+              "22:57"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "07:59",
+              "08:48",
+              "22:33"
+            ]
+          }
+        },
+        {
+          "id": "1-u-36",
+          "label": "병점행",
+          "direction": "up",
+          "originIndex": 89,
+          "terminusIndex": 77,
+          "weekday": {
+            "trips": [
+              "08:50",
+              "10:47",
+              "17:10",
+              "23:22"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "16:37",
+              "16:47"
+            ]
+          }
+        },
+        {
+          "id": "1-u-37",
+          "label": "소요산행",
+          "direction": "up",
+          "originIndex": 41,
+          "terminusIndex": 0,
+          "weekday": {
+            "trips": [
+              "12:27",
+              "13:20",
+              "14:18"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "05:20",
+              "18:40"
+            ]
+          }
+        },
+        {
+          "id": "1-d-38",
+          "label": "광운대행",
+          "direction": "down",
+          "originIndex": 7,
+          "terminusIndex": 19,
+          "weekday": {
+            "trips": [
+              "09:26",
+              "21:33",
+              "23:42"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "07:31",
+              "23:28"
+            ]
+          }
+        },
+        {
+          "id": "1-d-39",
+          "label": "인천행",
+          "direction": "down",
+          "originIndex": 19,
+          "terminusIndex": 61,
+          "weekday": {
+            "trips": [
+              "05:00"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "05:00",
+              "05:12",
+              "10:24"
+            ]
+          }
+        },
+        {
+          "id": "1-d-40",
+          "label": "광운대행",
+          "direction": "down",
+          "originIndex": 10,
+          "terminusIndex": 19,
+          "weekday": {
+            "trips": [
+              "16:27"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "08:48",
+              "21:58",
+              "23:47"
+            ]
+          }
+        },
+        {
+          "id": "1-u-41",
+          "label": "소요산행",
+          "direction": "up",
+          "originIndex": 52,
+          "terminusIndex": 0,
+          "weekday": {
+            "trips": [
+              "10:13",
+              "16:15"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "05:08"
+            ]
+          }
+        },
+        {
+          "id": "1-d-42",
+          "label": "구로행",
+          "direction": "down",
+          "originIndex": 10,
+          "terminusIndex": 41,
+          "weekday": {
+            "trips": [
+              "23:20"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "20:13",
+              "22:51"
+            ]
+          }
+        },
+        {
+          "id": "1-d-43",
+          "label": "구로행",
+          "direction": "down",
+          "originIndex": 19,
+          "terminusIndex": 41,
+          "weekday": {
+            "trips": [
+              "22:37",
+              "23:34"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "10:38"
+            ]
+          }
+        },
+        {
+          "id": "1-d-44",
+          "label": "병점행",
+          "direction": "down",
+          "originIndex": 10,
+          "terminusIndex": 77,
+          "weekday": {
+            "trips": [
+              "06:46",
+              "07:07"
+            ]
+          },
+          "weekend": {
+            "trips": []
+          }
+        },
+        {
+          "id": "1-u-45",
+          "label": "천안행",
+          "direction": "up",
+          "originIndex": 95,
+          "terminusIndex": 89,
+          "weekday": {
+            "trips": [
+              "23:45"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:45"
+            ]
+          }
+        }
+      ]
+    },
+    "2": {
+      "name": "2호선",
+      "minPerStation": 2,
+      "circular": false,
+      "loopLength": 43,
+      "patterns": [
+        {
+          "id": "2-d-0",
+          "label": "내선순환",
+          "direction": "down",
+          "originIndex": 10,
+          "terminusIndex": 10,
+          "circular": true,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:31",
+            "headwayMin": 5
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "22:33",
+            "headwayMin": 5.5
+          }
+        },
+        {
+          "id": "2-u-1",
+          "label": "외선순환",
+          "direction": "up",
+          "originIndex": 10,
+          "terminusIndex": 10,
+          "circular": true,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:31",
+            "headwayMin": 5
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "22:34",
+            "headwayMin": 5.5
+          }
+        },
+        {
+          "id": "2-u-2",
+          "label": "성수행",
+          "direction": "up",
+          "originIndex": 46,
+          "terminusIndex": 10,
+          "weekday": {
+            "first": "05:30",
+            "last": "24:51",
+            "headwayMin": 10
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:51",
+            "headwayMin": 10
+          }
+        },
+        {
+          "id": "2-d-3",
+          "label": "신설동행",
+          "direction": "down",
+          "originIndex": 10,
+          "terminusIndex": 46,
+          "weekday": {
+            "first": "05:30",
+            "last": "24:51",
+            "headwayMin": 10
+          },
+          "weekend": {
+            "first": "05:28",
+            "last": "23:51",
+            "headwayMin": 11
+          }
+        },
+        {
+          "id": "2-d-4",
+          "label": "까치산행",
+          "direction": "down",
+          "originIndex": 33,
+          "terminusIndex": 50,
+          "weekday": {
+            "first": "05:30",
+            "last": "24:51",
+            "headwayMin": 10
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:47",
+            "headwayMin": 10
+          }
+        },
+        {
+          "id": "2-u-5",
+          "label": "신도림행",
+          "direction": "up",
+          "originIndex": 50,
+          "terminusIndex": 33,
+          "weekday": {
+            "first": "05:30",
+            "last": "24:53",
+            "headwayMin": 10
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:47",
+            "headwayMin": 10
+          }
+        },
+        {
+          "id": "2-d-6",
+          "label": "신도림행",
+          "direction": "down",
+          "originIndex": 10,
+          "terminusIndex": 33,
+          "weekday": {
+            "first": "08:36",
+            "last": "24:22",
+            "headwayMin": 11.8
+          },
+          "weekend": {
+            "first": "09:19",
+            "last": "23:24",
+            "headwayMin": 18
+          }
+        },
+        {
+          "id": "2-u-7",
+          "label": "성수행",
+          "direction": "up",
+          "originIndex": 33,
+          "terminusIndex": 10,
+          "weekday": {
+            "first": "05:30",
+            "last": "18:23",
+            "headwayMin": 12
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "18:00",
+            "headwayMin": 11
+          }
+        },
+        {
+          "id": "2-u-8",
+          "label": "성수행",
+          "direction": "up",
+          "originIndex": 27,
+          "terminusIndex": 10,
+          "weekday": {
+            "trips": [
+              "05:30",
+              "08:23"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "05:30"
+            ]
+          }
+        },
+        {
+          "id": "2-d-9",
+          "label": "서울대입구행",
+          "direction": "down",
+          "originIndex": 10,
+          "terminusIndex": 27,
+          "weekday": {
+            "trips": [
+              "24:24"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:21"
+            ]
+          }
+        },
+        {
+          "id": "2-d-10",
+          "label": "홍대입구행",
+          "direction": "down",
+          "originIndex": 10,
+          "terminusIndex": 38,
+          "weekday": {
+            "trips": [
+              "24:33"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:33"
+            ]
+          }
+        },
+        {
+          "id": "2-d-11",
+          "label": "성수행",
+          "direction": "down",
+          "originIndex": 1,
+          "terminusIndex": 10,
+          "weekday": {
+            "trips": [
+              "05:30"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "05:30"
+            ]
+          }
+        },
+        {
+          "id": "2-u-12",
+          "label": "을지로입구행",
+          "direction": "up",
+          "originIndex": 10,
+          "terminusIndex": 1,
+          "weekday": {
+            "trips": [
+              "24:46"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:42"
+            ]
+          }
+        },
+        {
+          "id": "2-d-13",
+          "label": "삼성행",
+          "direction": "down",
+          "originIndex": 10,
+          "terminusIndex": 18,
+          "weekday": {
+            "trips": [
+              "24:44"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:42"
+            ]
+          }
+        }
+      ]
+    },
+    "3": {
+      "name": "3호선",
+      "minPerStation": 2,
+      "patterns": [
+        {
+          "id": "3-u-0",
+          "label": "대화행",
+          "direction": "up",
+          "originIndex": 43,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:31",
+            "last": "23:05",
+            "headwayMin": 9
+          },
+          "weekend": {
+            "first": "05:28",
+            "last": "22:24",
+            "headwayMin": 12
+          }
+        },
+        {
+          "id": "3-d-1",
+          "label": "오금행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 43,
+          "weekday": {
+            "first": "05:16",
+            "last": "22:54",
+            "headwayMin": 9
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "22:25",
+            "headwayMin": 12
+          }
+        },
+        {
+          "id": "3-u-2",
+          "label": "구파발행",
+          "direction": "up",
+          "originIndex": 43,
+          "terminusIndex": 11,
+          "weekday": {
+            "first": "07:06",
+            "last": "23:53",
+            "headwayMin": 12
+          },
+          "weekend": {
+            "first": "06:42",
+            "last": "23:00",
+            "headwayMin": 12
+          }
+        },
+        {
+          "id": "3-d-3",
+          "label": "오금행",
+          "direction": "down",
+          "originIndex": 11,
+          "terminusIndex": 43,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:44",
+            "headwayMin": 13
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "22:21",
+            "headwayMin": 12
+          }
+        },
+        {
+          "id": "3-u-4",
+          "label": "대화행",
+          "direction": "up",
+          "originIndex": 9,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:08",
+            "last": "18:20",
+            "headwayMin": 13
+          },
+          "weekend": {
+            "first": "05:23",
+            "last": "19:59",
+            "headwayMin": 13.5
+          }
+        },
+        {
+          "id": "3-d-5",
+          "label": "수서행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 40,
+          "weekday": {
+            "first": "06:56",
+            "last": "23:22",
+            "headwayMin": 15
+          },
+          "weekend": {
+            "first": "16:08",
+            "last": "22:34",
+            "headwayMin": 15
+          }
+        },
+        {
+          "id": "3-u-6",
+          "label": "구파발행",
+          "direction": "up",
+          "originIndex": 40,
+          "terminusIndex": 11,
+          "weekday": {
+            "first": "05:22",
+            "last": "17:45",
+            "headwayMin": 14.8
+          },
+          "weekend": {
+            "first": "05:40",
+            "last": "06:29",
+            "headwayMin": 12.3
+          }
+        },
+        {
+          "id": "3-d-7",
+          "label": "수서행",
+          "direction": "down",
+          "originIndex": 11,
+          "terminusIndex": 40,
+          "weekday": {
+            "first": "08:12",
+            "last": "24:02",
+            "headwayMin": 8
+          },
+          "weekend": {
+            "trips": [
+              "18:52",
+              "20:40",
+              "22:43"
+            ]
+          }
+        },
+        {
+          "id": "3-d-8",
+          "label": "삼송행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 9,
+          "weekday": {
+            "first": "08:30",
+            "last": "24:14",
+            "headwayMin": 22
+          },
+          "weekend": {
+            "trips": [
+              "11:02",
+              "12:24",
+              "16:01",
+              "18:20",
+              "19:09",
+              "21:36",
+              "22:11",
+              "23:36"
+            ]
+          }
+        },
+        {
+          "id": "3-u-9",
+          "label": "대화행",
+          "direction": "up",
+          "originIndex": 40,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:30",
+            "last": "18:20",
+            "headwayMin": 14.3
+          },
+          "weekend": {
+            "trips": [
+              "05:25",
+              "09:06",
+              "12:18"
+            ]
+          }
+        },
+        {
+          "id": "3-u-10",
+          "label": "대화행",
+          "direction": "up",
+          "originIndex": 35,
+          "terminusIndex": 0,
+          "weekday": {
+            "trips": [
+              "05:24"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "05:25"
+            ]
+          }
+        },
+        {
+          "id": "3-d-11",
+          "label": "도곡행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 35,
+          "weekday": {
+            "trips": [
+              "23:40"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "22:44"
+            ]
+          }
+        },
+        {
+          "id": "3-u-12",
+          "label": "독립문행",
+          "direction": "up",
+          "originIndex": 43,
+          "terminusIndex": 17,
+          "weekday": {
+            "trips": [
+              "24:09"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:12"
+            ]
+          }
+        },
+        {
+          "id": "3-d-13",
+          "label": "약수행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 24,
+          "weekday": {
+            "trips": [
+              "24:03"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:03"
+            ]
+          }
+        },
+        {
+          "id": "3-u-14",
+          "label": "압구정행",
+          "direction": "up",
+          "originIndex": 43,
+          "terminusIndex": 27,
+          "weekday": {
+            "trips": [
+              "24:27"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:27"
+            ]
+          }
+        }
+      ]
+    },
+    "4": {
+      "name": "4호선",
+      "minPerStation": 2.5,
+      "patterns": [
+        {
+          "id": "4-u-0",
           "label": "당고개행",
           "direction": "up",
           "originIndex": 47,
           "terminusIndex": 0,
-          "branches": ["본선"],
-          "weekday": { "first": "05:13", "last": "23:05", "headwayMin": 6 },
-          "weekend": { "first": "05:30", "last": "22:13", "headwayMin": 7 }
+          "weekday": {
+            "first": "05:13",
+            "last": "22:57",
+            "headwayMin": 10
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "21:57",
+            "headwayMin": 12
+          }
         },
         {
-          "id": "4u-hansung",
-          "label": "한성대입구행",
+          "id": "4-u-1",
+          "label": "당고개행",
           "direction": "up",
-          "originIndex": 47,
-          "terminusIndex": 10,
-          "branches": ["본선"],
-          "weekday": { "trips": ["23:26"] },
-          "weekend": { "trips": ["22:29"] }
+          "originIndex": 24,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:52",
+            "last": "24:12",
+            "headwayMin": 9
+          },
+          "weekend": {
+            "first": "05:45",
+            "last": "23:07",
+            "headwayMin": 12
+          }
         },
         {
-          "id": "4u-sadang",
-          "label": "사당행",
-          "direction": "up",
-          "originIndex": 47,
-          "terminusIndex": 24,
-          "branches": ["본선"],
-          "weekday": { "first": "05:40", "last": "23:58", "headwayMin": 9 },
-          "weekend": { "first": "05:40", "last": "22:59", "headwayMin": 10 }
-        },
-        {
-          "id": "4u-geumjeong",
-          "label": "금정행",
-          "direction": "up",
-          "originIndex": 47,
-          "terminusIndex": 34,
-          "branches": ["본선"],
-          "weekday": { "trips": ["24:24"] },
-          "weekend": { "trips": ["23:24"] }
-        },
-        {
-          "id": "4d-oido",
+          "id": "4-d-2",
           "label": "오이도행",
           "direction": "down",
           "originIndex": 0,
           "terminusIndex": 47,
-          "branches": ["본선"],
-          "weekday": { "first": "05:30", "last": "22:56", "headwayMin": 6 },
-          "weekend": { "first": "05:30", "last": "22:00", "headwayMin": 7 }
+          "weekday": {
+            "first": "05:36",
+            "last": "22:36",
+            "headwayMin": 10
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "22:09",
+            "headwayMin": 12
+          }
         },
         {
-          "id": "4d-ansan",
-          "label": "안산행",
-          "direction": "down",
-          "originIndex": 0,
-          "terminusIndex": 44,
-          "branches": ["본선"],
-          "weekday": { "first": "05:35", "last": "23:06", "headwayMin": 8 },
-          "weekend": { "first": "05:35", "last": "22:10", "headwayMin": 9 }
-        },
-        {
-          "id": "4d-sadang",
+          "id": "4-d-3",
           "label": "사당행",
           "direction": "down",
           "originIndex": 0,
           "terminusIndex": 24,
-          "branches": ["본선"],
-          "weekday": { "first": "05:30", "last": "24:00", "headwayMin": 9 },
-          "weekend": { "first": "05:30", "last": "23:30", "headwayMin": 10 }
+          "weekday": {
+            "first": "05:30",
+            "last": "24:09",
+            "headwayMin": 10.5
+          },
+          "weekend": {
+            "first": "05:36",
+            "last": "22:35",
+            "headwayMin": 12
+          }
         },
         {
-          "id": "4d-sanbon",
-          "label": "산본행",
+          "id": "4-d-4",
+          "label": "안산행",
           "direction": "down",
           "originIndex": 0,
-          "terminusIndex": 35,
-          "branches": ["본선"],
-          "weekday": { "trips": ["23:29"] },
-          "weekend": { "trips": ["22:30"] }
+          "terminusIndex": 44,
+          "weekday": {
+            "first": "06:29",
+            "last": "22:51",
+            "headwayMin": 21
+          },
+          "weekend": {
+            "first": "06:06",
+            "last": "22:45",
+            "headwayMin": 20
+          }
+        },
+        {
+          "id": "4-u-5",
+          "label": "당고개행",
+          "direction": "up",
+          "originIndex": 44,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:08",
+            "last": "20:33",
+            "headwayMin": 15.5
+          },
+          "weekend": {
+            "first": "05:21",
+            "last": "18:11",
+            "headwayMin": 16.5
+          }
+        },
+        {
+          "id": "4-u-6",
+          "label": "금정행",
+          "direction": "up",
+          "originIndex": 47,
+          "terminusIndex": 34,
+          "weekday": {
+            "trips": [
+              "23:12",
+              "24:02"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "22:41",
+              "23:24"
+            ]
+          }
+        },
+        {
+          "id": "4-u-7",
+          "label": "한성대입구행",
+          "direction": "up",
+          "originIndex": 47,
+          "terminusIndex": 10,
+          "weekday": {
+            "trips": [
+              "23:29"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "22:29"
+            ]
+          }
+        },
+        {
+          "id": "4-d-8",
+          "label": "서울역행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 17,
+          "weekday": {
+            "trips": [
+              "24:24"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:24"
+            ]
+          }
+        }
+      ]
+    },
+    "5": {
+      "name": "5호선",
+      "minPerStation": 2,
+      "patterns": [
+        {
+          "id": "5-d-0",
+          "label": "마천행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 55,
+          "weekday": {
+            "first": "05:37",
+            "last": "23:20",
+            "headwayMin": 13
+          },
+          "weekend": {
+            "first": "05:38",
+            "last": "22:35",
+            "headwayMin": 13
+          }
+        },
+        {
+          "id": "5-u-1",
+          "label": "방화행",
+          "direction": "up",
+          "originIndex": 55,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:31",
+            "last": "23:18",
+            "headwayMin": 13
+          },
+          "weekend": {
+            "first": "05:34",
+            "last": "22:33",
+            "headwayMin": 13
+          }
+        },
+        {
+          "id": "5-d-2",
+          "label": "하남검단산행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 48,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:12",
+            "headwayMin": 13
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "22:27",
+            "headwayMin": 13
+          }
+        },
+        {
+          "id": "5-u-3",
+          "label": "방화행",
+          "direction": "up",
+          "originIndex": 48,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:23",
+            "headwayMin": 13
+          },
+          "weekend": {
+            "first": "05:33",
+            "last": "22:34",
+            "headwayMin": 13
+          }
+        },
+        {
+          "id": "5-d-4",
+          "label": "마천행",
+          "direction": "down",
+          "originIndex": 38,
+          "terminusIndex": 55,
+          "weekday": {
+            "first": "05:30",
+            "last": "18:06",
+            "headwayMin": 13.5
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "17:43",
+            "headwayMin": 16
+          }
+        },
+        {
+          "id": "5-d-5",
+          "label": "상일동행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 43,
+          "weekday": {
+            "first": "07:22",
+            "last": "23:37",
+            "headwayMin": 19
+          },
+          "weekend": {
+            "first": "06:41",
+            "last": "22:52",
+            "headwayMin": 8
+          }
+        },
+        {
+          "id": "5-u-6",
+          "label": "강동행",
+          "direction": "up",
+          "originIndex": 48,
+          "terminusIndex": 38,
+          "weekday": {
+            "first": "07:04",
+            "last": "24:18",
+            "headwayMin": 29.5
+          },
+          "weekend": {
+            "trips": [
+              "23:40"
+            ]
+          }
+        },
+        {
+          "id": "5-d-7",
+          "label": "군자행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 34,
+          "weekday": {
+            "trips": [
+              "23:28",
+              "23:55"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:00"
+            ]
+          }
+        },
+        {
+          "id": "5-d-8",
+          "label": "애오개행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 20,
+          "weekday": {
+            "trips": [
+              "24:15"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:21"
+            ]
+          }
+        },
+        {
+          "id": "5-u-9",
+          "label": "왕십리행",
+          "direction": "up",
+          "originIndex": 55,
+          "terminusIndex": 30,
+          "weekday": {
+            "trips": [
+              "23:38",
+              "24:29"
+            ]
+          },
+          "weekend": {
+            "trips": []
+          }
+        },
+        {
+          "id": "5-d-10",
+          "label": "화곡행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 7,
+          "weekday": {
+            "trips": [
+              "24:37"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:33"
+            ]
+          }
+        }
+      ]
+    },
+    "6": {
+      "name": "6호선",
+      "minPerStation": 1.8,
+      "patterns": [
+        {
+          "id": "6-d-0",
+          "label": "봉화산행",
+          "direction": "down",
+          "originIndex": 6,
+          "terminusIndex": 37,
+          "weekday": {
+            "trips": [
+              "05:30",
+              "07:39"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "05:30"
+            ]
+          }
+        },
+        {
+          "id": "6-u-1",
+          "label": "새절행",
+          "direction": "up",
+          "originIndex": 37,
+          "terminusIndex": 6,
+          "weekday": {
+            "trips": [
+              "08:27",
+              "23:59"
+            ]
+          },
+          "weekend": {
+            "trips": []
+          }
+        },
+        {
+          "id": "6-u-2",
+          "label": "공덕행",
+          "direction": "up",
+          "originIndex": 37,
+          "terminusIndex": 16,
+          "weekday": {
+            "trips": [
+              "24:18"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:29"
+            ]
+          }
+        },
+        {
+          "id": "6-u-3",
+          "label": "한강진행",
+          "direction": "up",
+          "originIndex": 37,
+          "terminusIndex": 21,
+          "weekday": {
+            "trips": [
+              "24:32"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:40"
+            ]
+          }
+        },
+        {
+          "id": "6-u-4",
+          "label": "안암행",
+          "direction": "up",
+          "originIndex": 37,
+          "terminusIndex": 29,
+          "weekday": {
+            "trips": [
+              "24:47"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:51"
+            ]
+          }
+        },
+        {
+          "id": "6-d-5",
+          "label": "독바위행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 3,
+          "weekday": {
+            "trips": [
+              "24:17"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:54"
+            ]
+          }
+        }
+      ]
+    },
+    "7": {
+      "name": "7호선",
+      "minPerStation": 2,
+      "patterns": [
+        {
+          "id": "7-u-0",
+          "label": "도봉산행",
+          "direction": "up",
+          "originIndex": 50,
+          "terminusIndex": 1,
+          "weekday": {
+            "first": "06:02",
+            "last": "23:16",
+            "headwayMin": 12
+          },
+          "weekend": {
+            "first": "05:34",
+            "last": "22:33",
+            "headwayMin": 13
+          }
+        },
+        {
+          "id": "7-u-1",
+          "label": "장암행",
+          "direction": "up",
+          "originIndex": 41,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:30",
+            "last": "18:37",
+            "headwayMin": 12
+          },
+          "weekend": {
+            "first": "05:40",
+            "last": "22:31",
+            "headwayMin": 13
+          }
+        },
+        {
+          "id": "7-d-2",
+          "label": "온수행",
+          "direction": "down",
+          "originIndex": 1,
+          "terminusIndex": 41,
+          "weekday": {
+            "first": "07:26",
+            "last": "23:38",
+            "headwayMin": 9.8
+          },
+          "weekend": {
+            "first": "06:24",
+            "last": "22:48",
+            "headwayMin": 13
+          }
+        },
+        {
+          "id": "7-d-3",
+          "label": "부평구청행",
+          "direction": "down",
+          "originIndex": 1,
+          "terminusIndex": 50,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:18",
+            "headwayMin": 12
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "22:10",
+            "headwayMin": 14
+          }
+        },
+        {
+          "id": "7-d-4",
+          "label": "부평구청행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 50,
+          "weekday": {
+            "first": "05:35",
+            "last": "22:54",
+            "headwayMin": 12.5
+          },
+          "weekend": {
+            "first": "05:35",
+            "last": "22:20",
+            "headwayMin": 13
+          }
+        },
+        {
+          "id": "7-u-5",
+          "label": "장암행",
+          "direction": "up",
+          "originIndex": 50,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:34",
+            "last": "22:46",
+            "headwayMin": 15.5
+          },
+          "weekend": {
+            "first": "05:50",
+            "last": "21:46",
+            "headwayMin": 14
+          }
+        },
+        {
+          "id": "7-u-6",
+          "label": "도봉산행",
+          "direction": "up",
+          "originIndex": 41,
+          "terminusIndex": 1,
+          "weekday": {
+            "first": "05:59",
+            "last": "22:32",
+            "headwayMin": 11
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "21:57",
+            "headwayMin": 14
+          }
+        },
+        {
+          "id": "7-u-7",
+          "label": "온수행",
+          "direction": "up",
+          "originIndex": 50,
+          "terminusIndex": 41,
+          "weekday": {
+            "trips": [
+              "24:36"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:33",
+              "23:51"
+            ]
+          }
+        },
+        {
+          "id": "7-u-8",
+          "label": "태릉입구행",
+          "direction": "up",
+          "originIndex": 50,
+          "terminusIndex": 8,
+          "weekday": {
+            "trips": [
+              "23:34"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "22:43"
+            ]
+          }
+        },
+        {
+          "id": "7-d-9",
+          "label": "신풍행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 34,
+          "weekday": {
+            "trips": [
+              "23:48"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "22:54"
+            ]
+          }
+        },
+        {
+          "id": "7-u-10",
+          "label": "내방행",
+          "direction": "up",
+          "originIndex": 50,
+          "terminusIndex": 26,
+          "weekday": {
+            "trips": [
+              "24:08"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:15"
+            ]
+          }
+        },
+        {
+          "id": "7-d-11",
+          "label": "청담행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 20,
+          "weekday": {
+            "trips": [
+              "24:04"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:19"
+            ]
+          }
+        },
+        {
+          "id": "7-d-12",
+          "label": "건대입구행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 18,
+          "weekday": {
+            "trips": [
+              "24:22"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:36"
+            ]
+          }
+        }
+      ]
+    },
+    "8": {
+      "name": "8호선",
+      "minPerStation": 1.8,
+      "patterns": [
+        {
+          "id": "8-d-0",
+          "label": "모란행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 16,
+          "weekday": {
+            "first": "05:30",
+            "last": "24:27",
+            "headwayMin": 7
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:29",
+            "headwayMin": 9
+          }
+        },
+        {
+          "id": "8-u-1",
+          "label": "암사행",
+          "direction": "up",
+          "originIndex": 16,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:30",
+            "last": "24:22",
+            "headwayMin": 7
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:25",
+            "headwayMin": 9
+          }
+        },
+        {
+          "id": "8-u-2",
+          "label": "잠실행",
+          "direction": "up",
+          "originIndex": 16,
+          "terminusIndex": 4,
+          "weekday": {
+            "trips": [
+              "24:36"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:40"
+            ]
+          }
+        },
+        {
+          "id": "8-d-3",
+          "label": "모란행",
+          "direction": "down",
+          "originIndex": 7,
+          "terminusIndex": 16,
+          "weekday": {
+            "trips": [
+              "05:26"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "05:26"
+            ]
+          }
+        },
+        {
+          "id": "8-d-4",
+          "label": "가락시장행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 7,
+          "weekday": {
+            "trips": [
+              "24:46"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:43"
+            ]
+          }
+        }
+      ]
+    },
+    "9": {
+      "name": "9호선",
+      "minPerStation": 2.2,
+      "patterns": [
+        {
+          "id": "9-d-0",
+          "label": "중앙보훈병원행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 37,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:40",
+            "headwayMin": 11
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "22:48",
+            "headwayMin": 11
+          }
+        },
+        {
+          "id": "9-u-1",
+          "label": "개화행",
+          "direction": "up",
+          "originIndex": 37,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:36",
+            "headwayMin": 11
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "22:43",
+            "headwayMin": 11
+          }
+        },
+        {
+          "id": "9-u-2",
+          "label": "염창행",
+          "direction": "up",
+          "originIndex": 37,
+          "terminusIndex": 9,
+          "weekday": {
+            "trips": [
+              "23:58"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "22:56"
+            ]
+          }
+        },
+        {
+          "id": "9-d-3",
+          "label": "신논현행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 24,
+          "weekday": {
+            "trips": [
+              "24:04"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:01"
+            ]
+          }
+        },
+        {
+          "id": "9-u-4",
+          "label": "여의도행",
+          "direction": "up",
+          "originIndex": 37,
+          "terminusIndex": 14,
+          "weekday": {
+            "trips": [
+              "24:09"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:09"
+            ]
+          }
+        },
+        {
+          "id": "9-d-5",
+          "label": "동작행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 19,
+          "weekday": {
+            "trips": [
+              "24:17"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:14"
+            ]
+          }
+        },
+        {
+          "id": "9-u-6",
+          "label": "동작행",
+          "direction": "up",
+          "originIndex": 37,
+          "terminusIndex": 19,
+          "weekday": {
+            "trips": [
+              "24:20"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:22"
+            ]
+          }
+        },
+        {
+          "id": "9-u-7",
+          "label": "신논현행",
+          "direction": "up",
+          "originIndex": 37,
+          "terminusIndex": 24,
+          "weekday": {
+            "trips": [
+              "24:34"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:36"
+            ]
+          }
+        },
+        {
+          "id": "9-d-8",
+          "label": "당산행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 12,
+          "weekday": {
+            "trips": [
+              "24:30"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:28"
+            ]
+          }
+        },
+        {
+          "id": "9-u-9",
+          "label": "삼전행",
+          "direction": "up",
+          "originIndex": 37,
+          "terminusIndex": 30,
+          "weekday": {
+            "trips": [
+              "24:45"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:50"
+            ]
+          }
+        },
+        {
+          "id": "9-d-10",
+          "label": "가양행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 6,
+          "weekday": {
+            "trips": [
+              "24:43"
+            ]
+          },
+          "weekend": {
+            "trips": [
+              "23:43"
+            ]
+          }
+        }
+      ]
+    },
+    "2-seongsu": {
+      "name": "2호선 성수지선",
+      "minPerStation": 2,
+      "patterns": [
+        {
+          "id": "2-seongsud-0",
+          "label": "신설동행",
+          "direction": "down",
+          "originIndex": 10,
+          "terminusIndex": 46,
+          "weekday": {
+            "first": "05:30",
+            "last": "24:05",
+            "headwayMin": 6
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:50",
+            "headwayMin": 7
+          }
+        },
+        {
+          "id": "2-seongsuu-1",
+          "label": "성수행",
+          "direction": "up",
+          "originIndex": 46,
+          "terminusIndex": 10,
+          "weekday": {
+            "first": "05:30",
+            "last": "24:20",
+            "headwayMin": 6
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "24:05",
+            "headwayMin": 7
+          }
+        }
+      ]
+    },
+    "2-sinjeong": {
+      "name": "2호선 신정지선",
+      "minPerStation": 2,
+      "patterns": [
+        {
+          "id": "2-sinjeongd-0",
+          "label": "까치산행",
+          "direction": "down",
+          "originIndex": 33,
+          "terminusIndex": 50,
+          "weekday": {
+            "first": "05:30",
+            "last": "24:05",
+            "headwayMin": 6
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:50",
+            "headwayMin": 7
+          }
+        },
+        {
+          "id": "2-sinjeongu-1",
+          "label": "신도림행",
+          "direction": "up",
+          "originIndex": 50,
+          "terminusIndex": 33,
+          "weekday": {
+            "first": "05:30",
+            "last": "24:20",
+            "headwayMin": 6
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "24:05",
+            "headwayMin": 7
+          }
+        }
+      ]
+    },
+    "gyeongui": {
+      "name": "경의중앙선",
+      "minPerStation": 3,
+      "patterns": [
+        {
+          "id": "gyeonguid-0",
+          "label": "지평행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 51,
+          "weekday": {
+            "first": "05:00",
+            "last": "22:50",
+            "headwayMin": 12
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "22:50",
+            "headwayMin": 15
+          }
+        },
+        {
+          "id": "gyeonguiu-1",
+          "label": "문산행",
+          "direction": "up",
+          "originIndex": 51,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:00",
+            "last": "23:30",
+            "headwayMin": 12
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 15
+          }
+        }
+      ]
+    },
+    "airport": {
+      "name": "공항철도",
+      "minPerStation": 4,
+      "patterns": [
+        {
+          "id": "airportd-0",
+          "label": "서울역행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 13,
+          "weekday": {
+            "first": "05:20",
+            "last": "23:50",
+            "headwayMin": 7
+          },
+          "weekend": {
+            "first": "05:20",
+            "last": "23:50",
+            "headwayMin": 9
+          }
+        },
+        {
+          "id": "airportu-1",
+          "label": "인천공항2터미널행",
+          "direction": "up",
+          "originIndex": 13,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:18",
+            "last": "23:39",
+            "headwayMin": 7
+          },
+          "weekend": {
+            "first": "05:18",
+            "last": "23:39",
+            "headwayMin": 9
+          }
+        }
+      ]
+    },
+    "shinbundang": {
+      "name": "신분당선",
+      "minPerStation": 2.5,
+      "patterns": [
+        {
+          "id": "shinbundangd-0",
+          "label": "광교행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 15,
+          "weekday": {
+            "first": "05:30",
+            "last": "24:10",
+            "headwayMin": 5
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "24:00",
+            "headwayMin": 8
+          }
+        },
+        {
+          "id": "shinbundangu-1",
+          "label": "신사행",
+          "direction": "up",
+          "originIndex": 15,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 5
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 8
+          }
+        }
+      ]
+    },
+    "gyeongchun": {
+      "name": "경춘선",
+      "minPerStation": 3.5,
+      "patterns": [
+        {
+          "id": "gyeongchund-0",
+          "label": "춘천행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 23,
+          "weekday": {
+            "first": "05:10",
+            "last": "22:30",
+            "headwayMin": 15
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "22:30",
+            "headwayMin": 20
+          }
+        },
+        {
+          "id": "gyeongchunu-1",
+          "label": "청량리행",
+          "direction": "up",
+          "originIndex": 23,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:10",
+            "last": "22:50",
+            "headwayMin": 15
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "22:50",
+            "headwayMin": 20
+          }
+        }
+      ]
+    },
+    "suinbundang": {
+      "name": "수인분당선",
+      "minPerStation": 2.5,
+      "patterns": [
+        {
+          "id": "suinbundangd-0",
+          "label": "인천행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 62,
+          "weekday": {
+            "first": "05:20",
+            "last": "23:10",
+            "headwayMin": 8
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:00",
+            "headwayMin": 10
+          }
+        },
+        {
+          "id": "suinbundangu-1",
+          "label": "청량리행",
+          "direction": "up",
+          "originIndex": 62,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:20",
+            "last": "23:10",
+            "headwayMin": 8
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:00",
+            "headwayMin": 10
+          }
+        }
+      ]
+    },
+    "ui": {
+      "name": "우이신설선",
+      "minPerStation": 2,
+      "patterns": [
+        {
+          "id": "uid-0",
+          "label": "신설동행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 12,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:50",
+            "headwayMin": 4
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 6
+          }
+        },
+        {
+          "id": "uiu-1",
+          "label": "북한산우이행",
+          "direction": "up",
+          "originIndex": 12,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:50",
+            "headwayMin": 4
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 6
+          }
+        }
+      ]
+    },
+    "incheon1": {
+      "name": "인천1호선",
+      "minPerStation": 2.5,
+      "patterns": [
+        {
+          "id": "incheon1d-0",
+          "label": "국제업무지구행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 28,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:35",
+            "headwayMin": 5
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 7
+          }
+        },
+        {
+          "id": "incheon1u-1",
+          "label": "계양행",
+          "direction": "up",
+          "originIndex": 28,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:35",
+            "headwayMin": 5
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 7
+          }
+        }
+      ]
+    },
+    "incheon2": {
+      "name": "인천2호선",
+      "minPerStation": 2.5,
+      "patterns": [
+        {
+          "id": "incheon2d-0",
+          "label": "운연행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 26,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 5
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:20",
+            "headwayMin": 8
+          }
+        },
+        {
+          "id": "incheon2u-1",
+          "label": "검단오류행",
+          "direction": "up",
+          "originIndex": 26,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 5
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:20",
+            "headwayMin": 8
+          }
+        }
+      ]
+    },
+    "gimpo": {
+      "name": "김포골드라인",
+      "minPerStation": 2,
+      "patterns": [
+        {
+          "id": "gimpod-0",
+          "label": "김포공항행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 9,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 4
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 6
+          }
+        },
+        {
+          "id": "gimpou-1",
+          "label": "양촌행",
+          "direction": "up",
+          "originIndex": 9,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 4
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 6
+          }
+        }
+      ]
+    },
+    "seohaeline": {
+      "name": "서해선",
+      "minPerStation": 3,
+      "patterns": [
+        {
+          "id": "seohaelined-0",
+          "label": "원시행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 18,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:00",
+            "headwayMin": 10
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:00",
+            "headwayMin": 12
+          }
+        },
+        {
+          "id": "seohaelineu-1",
+          "label": "일산행",
+          "direction": "up",
+          "originIndex": 18,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:00",
+            "headwayMin": 10
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:00",
+            "headwayMin": 12
+          }
+        }
+      ]
+    },
+    "sinlim": {
+      "name": "신림선",
+      "minPerStation": 2,
+      "patterns": [
+        {
+          "id": "sinlimd-0",
+          "label": "관악산행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 10,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:50",
+            "headwayMin": 4
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 6
+          }
+        },
+        {
+          "id": "sinlimu-1",
+          "label": "샛강행",
+          "direction": "up",
+          "originIndex": 10,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:30",
+            "last": "23:50",
+            "headwayMin": 4
+          },
+          "weekend": {
+            "first": "05:30",
+            "last": "23:30",
+            "headwayMin": 6
+          }
+        }
+      ]
+    },
+    "gtxa": {
+      "name": "GTX-A",
+      "minPerStation": 5,
+      "patterns": [
+        {
+          "id": "gtxad-0",
+          "label": "동탄행",
+          "direction": "down",
+          "originIndex": 0,
+          "terminusIndex": 9,
+          "weekday": {
+            "first": "05:30",
+            "last": "24:00",
+            "headwayMin": 10
+          },
+          "weekend": {
+            "first": "06:00",
+            "last": "24:00",
+            "headwayMin": 15
+          }
+        },
+        {
+          "id": "gtxau-1",
+          "label": "파주운정행",
+          "direction": "up",
+          "originIndex": 9,
+          "terminusIndex": 0,
+          "weekday": {
+            "first": "05:30",
+            "last": "24:00",
+            "headwayMin": 10
+          },
+          "weekend": {
+            "first": "06:00",
+            "last": "24:00",
+            "headwayMin": 15
+          }
         }
       ]
     }

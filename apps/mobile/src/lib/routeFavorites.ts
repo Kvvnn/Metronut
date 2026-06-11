@@ -10,7 +10,7 @@ export interface FavoriteRoute {
   savedAt: number;
 }
 
-const FAVORITE_ROUTES_KEY = 'metro_favorite_routes';
+export const FAVORITE_ROUTES_KEY = 'metro_favorite_routes';
 const MAX_FAVORITE_ROUTES = 20;
 
 export function getRouteFavoriteId(from: string, to: string, via = '') {

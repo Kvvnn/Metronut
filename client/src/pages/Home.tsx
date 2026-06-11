@@ -362,13 +362,19 @@ export default function Home() {
               <ArrowRightLeft size={14} className="text-[#1B2838]" />
             </button>
           </div>
-          {/* Search button */}
-          <button
-            onClick={handleSearch}
-            className="w-11 h-11 bg-[#1B2838] rounded-2xl flex items-center justify-center btn-press shadow-sm shrink-0"
-          >
-            <Search size={18} className="text-white" />
-          </button>
+          {/* Search button — 딥스페이스 톤 + 무중력 부유 */}
+          <div className="space-float shrink-0">
+            <button
+              onClick={handleSearch}
+              className="w-11 h-11 rounded-2xl flex items-center justify-center btn-press shrink-0"
+              style={{
+                background: "linear-gradient(160deg, #141b3d 0%, #0b1026 100%)",
+                boxShadow: "0 4px 14px rgba(13, 18, 56, 0.35), inset 0 1px 0 rgba(255,255,255,0.12)",
+              }}
+            >
+              <Search size={18} className="text-white" />
+            </button>
+          </div>
         </div>
 
         {/* Station selection hint */}

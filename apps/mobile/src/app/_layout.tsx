@@ -1,9 +1,15 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 
+import { initializeNotifications } from '@/lib/notifications';
 import { colors } from '@/lib/theme';
 
 export default function RootLayout() {
+  useEffect(() => {
+    initializeNotifications();
+  }, []);
+
   return (
     <>
       <Stack

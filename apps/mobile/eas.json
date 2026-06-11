@@ -7,7 +7,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://your-vercel-domain.vercel.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://metronut.vercel.app"
       }
     },
     "development-simulator": {
@@ -17,19 +17,19 @@
         "simulator": true
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://your-vercel-domain.vercel.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://metronut.vercel.app"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://your-vercel-domain.vercel.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://metronut.vercel.app"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://your-vercel-domain.vercel.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://metronut.vercel.app"
       }
     }
   },

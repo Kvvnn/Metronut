@@ -1,13 +1,27 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Link, Stack } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { formatFastTransferInfo } from '@shared/fastTransfer';
-import { getLineInfo } from '@shared/metro/pathfinder';
+import { getExpressStopNames, getLineInfo } from '@shared/metro/pathfinder';
+import {
+  dedupeTrainsByNo,
+  enrichTrains,
+  filterSameDirectionTrains,
+  formatPositionAge,
+  getForwardDistance,
+  isBeforeBoardingStation,
+  isCircularLineId,
+  isDeepInactiveTrain,
+  isPastLastTrain,
+  orientRideStations,
+} from '@shared/metro/ridingTrains';
 
+import { getAppPreferences } from '@/lib/appPreferences';
+import { ensureNotificationPermission, sendRidingAlert } from '@/lib/notifications';
 import { getTrainPositions, type TrainPosition } from '@/lib/realtimeApi';
-import { impactHaptic, selectionHaptic, successHaptic } from '@/lib/haptics';
+import { impactHaptic, selectionHaptic, successHaptic, warningHaptic } from '@/lib/haptics';
 import {
   getRidingRoute,
   getRidingSessionState,
@@ -17,12 +31,14 @@ import {
   type RidingRouteSegment,
   type RidingTransferSegment,
 } from '@/lib/ridingSession';
-import { colors, radii, spacing, typography } from '@/lib/theme';
+import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
 
 interface TrainCandidate extends TrainPosition {
   routeStationIndex: number;
   isSimulatedCandidate: boolean;
 }
+
+const TRAIN_POSITION_POLL_MS = 15000;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -85,13 +101,43 @@ function createSimulatedCandidates(segment: RidingRideSegment): TrainCandidate[]
   }));
 }
 
-function toTrainCandidates(positions: TrainPosition[], segment: RidingRideSegment): TrainCandidate[] {
+function toTrainCandidates(
+  positions: TrainPosition[],
+  segment: RidingRideSegment,
+  selectedTrainNo: string | null,
+): TrainCandidate[] {
+  const oriented = orientRideStations(
+    segment.lineId,
+    segment.fromStationName,
+    segment.toStationName,
+    segment.stationNames,
+  );
+  const routeStationSet = new Set(segment.stationNames);
+  const isCircular = isCircularLineId(segment.lineId);
   const stationIndex = new Map(segment.stationNames.map((stationName, index) => [stationName, index]));
 
-  return positions
-    .map((position) => ({
-      ...position,
-      routeStationIndex: stationIndex.get(position.stationName) ?? -1,
+  // 같은 방향 열차만 남기고(updnLine/종착역 기준), 이미 도착역을 지난 열차는 제외한다.
+  const sameDirection = filterSameDirectionTrains(
+    enrichTrains(positions, oriented),
+    oriented,
+    selectedTrainNo,
+  );
+  const active = dedupeTrainsByNo(sameDirection).filter(
+    (train) =>
+      !isDeepInactiveTrain(
+        train,
+        routeStationSet,
+        oriented.fromIdx,
+        oriented.toIdx,
+        oriented.stations.length,
+        isCircular,
+      ),
+  );
+
+  return active
+    .map((train) => ({
+      ...train,
+      routeStationIndex: stationIndex.get(train.stationName) ?? -1,
       isSimulatedCandidate: false,
     }))
     .sort((a, b) => {
@@ -119,7 +165,7 @@ function TransferNotice({ transfer }: { transfer: RidingTransferSegment }) {
   return (
     <View style={styles.transferNotice}>
       <View style={styles.transferNoticeHeader}>
-        <Ionicons name="walk-outline" size={18} color="#B85C18" />
+        <Ionicons name="walk-outline" size={18} color="#C15B1B" />
         <Text style={styles.transferNoticeTitle}>{transfer.stationName} 환승</Text>
         <LineBadge lineId={transfer.toLineId} />
       </View>
@@ -150,7 +196,7 @@ function TrainCandidateRow({
       ]}
     >
       <View style={styles.trainNoBadge}>
-        <Ionicons name="train-outline" size={15} color={selected ? colors.surface : colors.green} />
+        <Ionicons name="train-outline" size={15} color={selected ? colors.surface : colors.accent} />
       </View>
       <View style={styles.trainCopy}>
         <Text style={styles.trainTitle}>
@@ -161,7 +207,7 @@ function TrainCandidateRow({
         </Text>
       </View>
       {candidate.isSimulatedCandidate ? <Text style={styles.simBadge}>SIM</Text> : null}
-      {selected ? <Ionicons name="checkmark-circle" size={20} color={colors.green} /> : null}
+      {selected ? <Ionicons name="checkmark-circle" size={20} color={colors.accent} /> : null}
     </Pressable>
   );
 }
@@ -178,6 +224,14 @@ export default function RidingScreen() {
   const [isSimulated, setIsSimulated] = useState(false);
   const [positionMessage, setPositionMessage] = useState('');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // 환승 전역(직전 역 도달)에서 다음 노선 열차를 미리 골라두는 상태.
+  const [nextLineTrains, setNextLineTrains] = useState<TrainPosition[]>([]);
+  const [pendingNextTrainNo, setPendingNextTrainNo] = useState<string | null>(null);
+  // 환승 후 첫 후보 갱신에서 carryover가 소비한다.
+  const pendingNextTrainNoRef = useRef<string | null>(null);
+  // 하차/환승 알림이 같은 구간에서 중복 발송되지 않도록 한 번만 발사.
+  const alarmFiredRef = useRef(false);
+  const [notificationBlocked, setNotificationBlocked] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -200,6 +254,9 @@ export default function RidingScreen() {
         setAlarmBefore(restored.alarmBefore);
       } else {
         setCurrentSegmentIndex(findFirstRideIndex(nextRoute.segments));
+        const preferences = await getAppPreferences();
+        if (!mounted) return;
+        setAlarmBefore(preferences.defaultAlarmBefore);
       }
     }
 
@@ -233,37 +290,208 @@ export default function RidingScreen() {
   const progress = stationProgress(currentRideSegment, safeStationIndex);
   const selectedTrain = trainCandidates.find((candidate) => candidate.trainNo === selectedTrainNo) ?? null;
   const isFinalArrival = Boolean(route && currentSegmentIndex >= route.segments.length - 1 && remainingStations === 0);
+  // 폴링(lastUpdated)마다 리렌더되므로 매 렌더 계산으로 충분하다.
+  const isPastLastTrainForRide = currentRideSegment
+    ? isPastLastTrain(
+        currentRideSegment.lineId,
+        currentRideSegment.fromStationName,
+        currentRideSegment.toStationName,
+        new Date(),
+      )
+    : false;
+  // 선택한 열차가 급행/특급이면 현재 경로에서 통과(무정차)하는 역을 안내한다.
+  // skipped === null: 정차패턴이 여럿이라 통과역을 단정할 수 없는 경우.
+  const expressSkipInfo = useMemo(() => {
+    const type = selectedTrain?.trainType;
+    if (!currentRideSegment || (type !== '급행' && type !== '특급')) return null;
+    const stopNames = getExpressStopNames(currentRideSegment.lineId, type);
+    if (!stopNames) return { type, skipped: null as string[] | null };
+    const names = currentRideSegment.stationNames;
+    const stopIdxs = names.map((name, index) => (stopNames.has(name) ? index : -1)).filter((index) => index >= 0);
+    if (stopIdxs.length < 2) return { type, skipped: null };
+    const skipped = names
+      .slice(stopIdxs[0], stopIdxs[stopIdxs.length - 1] + 1)
+      .filter((name) => !stopNames.has(name));
+    return { type, skipped };
+  }, [currentRideSegment, selectedTrain?.trainType]);
+
+  // 현재 탑승 구간 이후의 다음 탑승 구간 (환승 후 노선).
+  const nextRideSegment = useMemo(
+    () => findNextRideSegment(route, currentSegmentIndex + 1),
+    [route, currentSegmentIndex],
+  );
+  // 환승 전역 윈도: 환승이 남아 있고, 열차 추적 중이며, 환승역 직전 역에 도달.
+  const inPreTransferWindow = Boolean(
+    currentSegment?.type === 'ride' &&
+      upcomingTransfer &&
+      nextRideSegment &&
+      selectedTrainNo &&
+      remainingStations === 1,
+  );
+  const isPastLastTrainForNext = nextRideSegment
+    ? isPastLastTrain(
+        nextRideSegment.lineId,
+        nextRideSegment.fromStationName,
+        nextRideSegment.toStationName,
+        new Date(),
+      )
+    : false;
+
+  // 다음 노선에서 환승역(보딩역)에 아직 탈 수 있는 열차 (미리선택 후보, 최대 6대).
+  const nextBoardable = useMemo(() => {
+    if (!nextRideSegment || nextLineTrains.length === 0) return [];
+    const oriented = orientRideStations(
+      nextRideSegment.lineId,
+      nextRideSegment.fromStationName,
+      nextRideSegment.toStationName,
+      nextRideSegment.stationNames,
+    );
+    if (oriented.fromIdx < 0) return [];
+    const boardIdx = oriented.fromIdx;
+    const total = oriented.stations.length;
+    const routeSet = new Set(nextRideSegment.stationNames);
+    const circ = isCircularLineId(nextRideSegment.lineId);
+    const enriched = dedupeTrainsByNo(
+      filterSameDirectionTrains(enrichTrains(nextLineTrains, oriented), oriented, null),
+    );
+    const candidates = enriched.filter((train) => {
+      if (isDeepInactiveTrain(train, routeSet, boardIdx, oriented.toIdx, total, circ)) return false;
+      if (train.posIdxOriented < 0) return false;
+      if (circ) {
+        if (train.posIdxOriented === boardIdx) return train.trainStatus !== '2';
+        return isBeforeBoardingStation(train, routeSet, boardIdx, oriented.toIdx, total, true);
+      }
+      if (train.posIdxOriented < boardIdx) return true;
+      if (train.posIdxOriented === boardIdx) return train.trainStatus !== '2';
+      return false;
+    });
+    const distance = (train: (typeof candidates)[number]) =>
+      circ ? getForwardDistance(train.posIdxOriented, boardIdx, total) : boardIdx - train.posIdxOriented;
+    return candidates.sort((a, b) => distance(a) - distance(b)).slice(0, 6);
+  }, [nextLineTrains, nextRideSegment]);
   const alarmStatus = !alarmEnabled
     ? '하차 알림 꺼짐'
     : remainingStations <= alarmBefore && remainingStations > 0
       ? '곧 하차할 준비'
       : `${alarmBefore}정거장 전 알림`;
 
-  const refreshTrainPositions = useCallback(async () => {
+  const refreshTrainPositions = useCallback(async (showLoading = true) => {
     if (!currentRideSegment) return;
 
-    setLoadingTrains(true);
+    if (showLoading) setLoadingTrains(true);
     const result = await getTrainPositions(currentRideSegment.lineName);
-    const candidates = toTrainCandidates(result.positions, currentRideSegment);
-    const nextCandidates = result.isSimulated || candidates.length === 0
+    const candidates = toTrainCandidates(result.positions, currentRideSegment, selectedTrainNo);
+    const freshCandidates = candidates.filter((candidate) => !candidate.isStale);
+    const allCandidatesStale = candidates.length > 0 && freshCandidates.length === 0;
+    const staleCandidateCount = candidates.length - freshCandidates.length;
+    const nextCandidates = result.isSimulated || candidates.length === 0 || allCandidatesStale
       ? createSimulatedCandidates(currentRideSegment)
-      : candidates;
+      : freshCandidates;
+    const latestStaleAge = candidates
+      .map((candidate) => candidate.receivedAtAgeSeconds)
+      .filter((age): age is number => age !== undefined)
+      .sort((a, b) => a - b)[0];
 
     setTrainCandidates(nextCandidates);
-    setIsSimulated(result.isSimulated || candidates.length === 0);
-    setPositionMessage(result.errorMessage ?? (candidates.length === 0 ? '열차 후보를 시뮬레이션으로 표시합니다.' : ''));
+    setIsSimulated(result.isSimulated || candidates.length === 0 || allCandidatesStale);
+    setPositionMessage(
+      result.errorMessage ??
+        (allCandidatesStale
+          ? `서울시 위치 데이터가 ${formatPositionAge(latestStaleAge)} 전 값이라 시뮬레이션으로 표시합니다.`
+          : candidates.length === 0
+            ? '열차 후보를 시뮬레이션으로 표시합니다.'
+            : staleCandidateCount > 0
+              ? `오래된 위치 ${staleCandidateCount}대 제외됨`
+              : ''),
+    );
     setLastUpdated(new Date());
-    setLoadingTrains(false);
+    if (showLoading) setLoadingTrains(false);
 
     setSelectedTrainNo((current) => {
       if (current && nextCandidates.some((candidate) => candidate.trainNo === current)) return current;
+      // 환승 전역에서 미리 골라둔 열차가 이 노선 후보에 있으면 그대로 적용.
+      const pending = pendingNextTrainNoRef.current;
+      if (pending && nextCandidates.some((candidate) => candidate.trainNo === pending)) {
+        pendingNextTrainNoRef.current = null;
+        return pending;
+      }
       return nextCandidates[0]?.trainNo ?? null;
     });
-  }, [currentRideSegment]);
+  }, [currentRideSegment, selectedTrainNo]);
 
   useEffect(() => {
     void refreshTrainPositions();
+    const timer = setInterval(() => {
+      void refreshTrainPositions(false);
+    }, TRAIN_POSITION_POLL_MS);
+
+    return () => clearInterval(timer);
   }, [refreshTrainPositions]);
+
+  // 환승 전역 윈도에서만 다음 노선 열차 위치를 폴링한다.
+  useEffect(() => {
+    if (!inPreTransferWindow || !nextRideSegment) {
+      setNextLineTrains([]);
+      return;
+    }
+
+    let mounted = true;
+    const fetchNextLine = async () => {
+      const result = await getTrainPositions(nextRideSegment.lineName);
+      if (!mounted) return;
+      setNextLineTrains(
+        result.isSimulated ? [] : result.positions.filter((position) => !position.isStale),
+      );
+    };
+
+    void fetchNextLine();
+    const timer = setInterval(() => void fetchNextLine(), TRAIN_POSITION_POLL_MS);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, [inPreTransferWindow, nextRideSegment]);
+
+  // 탑승 안내 중 하차 알림을 받으려면 시스템 알림 권한이 필요하다.
+  useEffect(() => {
+    if (!route || !alarmEnabled) return;
+    void ensureNotificationPermission().then((granted) => setNotificationBlocked(!granted));
+  }, [route, alarmEnabled]);
+
+  // 하차 임박 시 로컬 알림 발송. 환승이 남아 있으면 환승 안내로 보낸다.
+  useEffect(() => {
+    if (!alarmEnabled || !selectedTrainNo || !currentRideSegment) return;
+    if (remainingStations <= 0) return;
+    if (remainingStations > alarmBefore) {
+      // 알림 시점 이전으로 되돌아가면 재무장한다.
+      alarmFiredRef.current = false;
+      return;
+    }
+    if (alarmFiredRef.current) return;
+    alarmFiredRef.current = true;
+
+    warningHaptic();
+    const stationsLabel = remainingStations === 1 ? '다음 역' : `${remainingStations}정거장 후`;
+    if (upcomingTransfer && nextRideSegment) {
+      void sendRidingAlert(
+        `곧 ${upcomingTransfer.stationName} 환승`,
+        `${stationsLabel} 도착 · ${nextRideSegment.lineName} ${nextRideSegment.direction}으로 갈아탈 준비를 하세요.`,
+      );
+    } else {
+      void sendRidingAlert(
+        `곧 ${currentRideSegment.toStationName} 하차`,
+        `${stationsLabel} 도착합니다. 내릴 준비를 하세요.`,
+      );
+    }
+  }, [
+    alarmBefore,
+    alarmEnabled,
+    currentRideSegment,
+    nextRideSegment,
+    remainingStations,
+    selectedTrainNo,
+    upcomingTransfer,
+  ]);
 
   useEffect(() => {
     if (!route) return;
@@ -311,6 +539,21 @@ export default function RidingScreen() {
     setCurrentStationIndex(0);
     setSelectedTrainNo(null);
     setTrainCandidates([]);
+    // pendingNextTrainNoRef는 carryover가 소비하므로 여기서 지우지 않는다.
+    setPendingNextTrainNo(null);
+    setNextLineTrains([]);
+    alarmFiredRef.current = false;
+  };
+
+  const handlePreSelectNextTrain = (trainNo: string) => {
+    if (isPastLastTrainForNext) {
+      warningHaptic();
+      return;
+    }
+    selectionHaptic();
+    const next = pendingNextTrainNo === trainNo ? null : trainNo;
+    setPendingNextTrainNo(next);
+    pendingNextTrainNoRef.current = next;
   };
 
   const handleNext = () => {
@@ -352,6 +595,10 @@ export default function RidingScreen() {
   };
 
   const handleSelectTrain = (candidate: TrainCandidate) => {
+    if (isPastLastTrainForRide) {
+      warningHaptic();
+      return;
+    }
     successHaptic();
     setSelectedTrainNo(candidate.trainNo);
     if (candidate.routeStationIndex >= 0) setCurrentStationIndex(candidate.routeStationIndex);
@@ -378,7 +625,7 @@ export default function RidingScreen() {
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={loadingTrains} onRefresh={refreshTrainPositions} tintColor={colors.green} />}
+      refreshControl={<RefreshControl refreshing={loadingTrains} onRefresh={() => void refreshTrainPositions()} tintColor={colors.accent} />}
     >
       <Stack.Screen options={{ title: '탑승 안내' }} />
 
@@ -421,17 +668,17 @@ export default function RidingScreen() {
           </Text>
 
           <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: line?.color ?? colors.green }]} />
+            <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: line?.color ?? colors.accent }]} />
           </View>
 
           <View style={styles.controlRow}>
             <Pressable style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]} onPress={handlePrevious}>
-              <Ionicons name="chevron-back" size={17} color={colors.green} />
+              <Ionicons name="chevron-back" size={17} color={colors.accent} />
               <Text style={styles.secondaryButtonText}>이전</Text>
             </Pressable>
             <Pressable style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]} onPress={handleNext}>
               <Text style={styles.secondaryButtonText}>{isFinalArrival ? '도착 완료' : '다음'}</Text>
-              <Ionicons name="chevron-forward" size={17} color={colors.green} />
+              <Ionicons name="chevron-forward" size={17} color={colors.accent} />
             </Pressable>
           </View>
         </View>
@@ -440,7 +687,7 @@ export default function RidingScreen() {
       <View style={styles.alertCard}>
         <View style={styles.alertHeader}>
           <View style={styles.alertTitleRow}>
-            <Ionicons name={alarmEnabled ? 'notifications-outline' : 'notifications-off-outline'} size={18} color={colors.green} />
+            <Ionicons name={alarmEnabled ? 'notifications-outline' : 'notifications-off-outline'} size={18} color={colors.accent} />
             <Text style={styles.sectionTitle}>하차 알림</Text>
           </View>
           <Switch
@@ -449,13 +696,18 @@ export default function RidingScreen() {
               impactHaptic();
               setAlarmEnabled(enabled);
             }}
-            trackColor={{ false: '#D8D1C4', true: '#A7D1C3' }}
-            thumbColor={alarmEnabled ? colors.green : colors.surface}
+            trackColor={{ false: '#E5E5EA', true: '#34C759' }}
+            thumbColor={colors.surface}
           />
         </View>
         <Text style={[styles.alertStatus, alarmEnabled && remainingStations <= alarmBefore && remainingStations > 0 && styles.alertStatusHot]}>
           {alarmStatus}
         </Text>
+        {notificationBlocked && alarmEnabled ? (
+          <Text style={styles.alertPermissionHint}>
+            기기 알림 권한이 꺼져 있어 화면 안에서만 표시됩니다. 시스템 설정에서 메트로넛 알림을 허용해 주세요.
+          </Text>
+        ) : null}
         <View style={styles.alarmBeforeRow}>
           {[1, 2, 3].map((value) => (
             <Pressable
@@ -476,16 +728,65 @@ export default function RidingScreen() {
 
       {upcomingTransfer && currentSegment?.type === 'ride' ? <TransferNotice transfer={upcomingTransfer} /> : null}
 
+      {inPreTransferWindow && nextRideSegment ? (
+        <View style={styles.preTransferCard}>
+          <View style={styles.preTransferHeader}>
+            <LineBadge lineId={nextRideSegment.lineId} />
+            <Text style={styles.preTransferTitle} numberOfLines={2}>
+              곧 {nextRideSegment.fromStationName} 환승 · 탈 열차 미리 선택
+            </Text>
+          </View>
+          {isPastLastTrainForNext ? (
+            <Text style={styles.preTransferWarning}>막차가 끊겨 열차를 고를 수 없습니다.</Text>
+          ) : nextBoardable.length === 0 ? (
+            <Text style={styles.preTransferEmpty}>다음 노선 열차 위치를 확인하는 중…</Text>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.preTransferChips}>
+              {nextBoardable.map((train) => {
+                const chipSelected = pendingNextTrainNo === train.trainNo;
+                return (
+                  <Pressable
+                    key={train.trainNo}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: chipSelected }}
+                    onPress={() => handlePreSelectNextTrain(train.trainNo)}
+                    style={[styles.preTransferChip, chipSelected && styles.preTransferChipActive]}>
+                    <Text style={[styles.preTransferChipText, chipSelected && styles.preTransferChipTextActive]}>
+                      {train.trainNo} · {train.stationName}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
+          {pendingNextTrainNo ? (
+            <Text style={styles.preTransferPending}>
+              {pendingNextTrainNo} 미리 선택됨 · 환승하면 자동 적용됩니다
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <Ionicons name="train-outline" size={17} color={line?.color ?? colors.green} />
+          <Ionicons name="train-outline" size={17} color={line?.color ?? colors.accent} />
           <Text style={styles.sectionTitle}>열차 후보</Text>
           {selectedTrain ? <Text style={styles.selectedPill}>{selectedTrain.trainNo} 선택됨</Text> : null}
         </View>
-        <Pressable style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]} onPress={refreshTrainPositions}>
+        <Pressable style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]} onPress={() => void refreshTrainPositions()}>
           <Ionicons name="refresh" size={16} color={colors.subtleText} />
         </Pressable>
       </View>
+
+      {isPastLastTrainForRide ? (
+        <View style={styles.lastTrainCard}>
+          <View style={styles.lastTrainTitleRow}>
+            <Ionicons name="moon-outline" size={15} color={colors.red} />
+            <Text style={styles.lastTrainTitle}>막차 종료</Text>
+          </View>
+          <Text style={styles.lastTrainBody}>이 방향 막차가 이미 끊겨 열차를 고를 수 없습니다.</Text>
+        </View>
+      ) : null}
 
       <View style={styles.listCard}>
         {trainCandidates.length > 0 ? (
@@ -503,6 +804,20 @@ export default function RidingScreen() {
           </View>
         )}
       </View>
+
+      {expressSkipInfo ? (
+        <View style={styles.expressNotice}>
+          <View style={styles.lastTrainTitleRow}>
+            <Ionicons name="flash-outline" size={15} color="#C15B1B" />
+            <Text style={styles.expressNoticeTitle}>{expressSkipInfo.type} 열차 선택됨</Text>
+          </View>
+          <Text style={styles.expressNoticeBody}>
+            {expressSkipInfo.skipped && expressSkipInfo.skipped.length > 0
+              ? `이 ${expressSkipInfo.type}은 ${expressSkipInfo.skipped.join(' · ')} 역을 통과합니다.`
+              : '일부 역은 정차하지 않을 수 있습니다. 정차역을 확인하세요.'}
+          </Text>
+        </View>
+      ) : null}
 
       {lastUpdated ? (
         <Text style={styles.updatedText}>
@@ -522,8 +837,8 @@ export default function RidingScreen() {
                 <View
                   style={[
                     styles.timelineDot,
-                    isCurrent && { borderColor: line?.color ?? colors.green, backgroundColor: colors.surface },
-                    isPassed && { backgroundColor: line?.color ?? colors.green },
+                    isCurrent && { borderColor: line?.color ?? colors.accent, backgroundColor: colors.surface },
+                    isPassed && { backgroundColor: line?.color ?? colors.accent },
                   ]}
                 />
                 <Text style={[styles.timelineStation, isCurrent && styles.timelineStationCurrent, isPassed && styles.timelineStationPassed]}>
@@ -553,7 +868,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   kicker: {
-    color: colors.green,
+    color: colors.accent,
     fontSize: 12,
     fontWeight: '900',
     textTransform: 'uppercase',
@@ -573,6 +888,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.md,
     padding: spacing.lg,
+    ...cardShadow,
   },
   activeTopRow: {
     alignItems: 'center',
@@ -605,7 +921,7 @@ const styles = StyleSheet.create({
     color: colors.subtleText,
   },
   progressTrack: {
-    backgroundColor: '#ECE6DA',
+    backgroundColor: '#F0F1F4',
     borderRadius: radii.pill,
     height: 8,
     overflow: 'hidden',
@@ -620,7 +936,7 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     alignItems: 'center',
-    backgroundColor: '#E7F0EA',
+    backgroundColor: '#EBF4FF',
     borderRadius: radii.sm,
     flex: 1,
     flexDirection: 'row',
@@ -629,7 +945,7 @@ const styles = StyleSheet.create({
     minHeight: 46,
   },
   secondaryButtonText: {
-    color: colors.green,
+    color: colors.accent,
     fontSize: 14,
     fontWeight: '900',
   },
@@ -653,6 +969,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
+    ...cardShadow,
   },
   alertHeader: {
     alignItems: 'center',
@@ -671,7 +988,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   alertStatusHot: {
-    color: '#B85C18',
+    color: '#C15B1B',
+  },
+  alertPermissionHint: {
+    color: colors.subtleText,
+    fontSize: 12,
+    lineHeight: 17,
   },
   alarmBeforeRow: {
     flexDirection: 'row',
@@ -679,7 +1001,7 @@ const styles = StyleSheet.create({
   },
   alarmBeforeButton: {
     alignItems: 'center',
-    backgroundColor: '#F8F7F4',
+    backgroundColor: '#F0F1F4',
     borderColor: colors.border,
     borderRadius: radii.pill,
     borderWidth: 1,
@@ -688,8 +1010,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   alarmBeforeButtonActive: {
-    backgroundColor: colors.green,
-    borderColor: colors.green,
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   alarmBeforeText: {
     color: colors.subtleText,
@@ -700,8 +1022,8 @@ const styles = StyleSheet.create({
     color: colors.surface,
   },
   transferNotice: {
-    backgroundColor: '#FFF7EF',
-    borderColor: '#F0D4B6',
+    backgroundColor: '#FFF8EF',
+    borderColor: '#F0E4D0',
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.xs,
@@ -714,7 +1036,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   transferNoticeTitle: {
-    color: '#B85C18',
+    color: '#C15B1B',
     fontSize: 15,
     fontWeight: '900',
   },
@@ -725,7 +1047,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   transferNoticeFast: {
-    color: '#8F4611',
+    color: '#C15B1B',
     fontSize: 13,
     fontWeight: '900',
   },
@@ -748,9 +1070,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   selectedPill: {
-    backgroundColor: '#E7F0EA',
+    backgroundColor: '#EBF4FF',
     borderRadius: radii.pill,
-    color: colors.green,
+    color: colors.accent,
     fontSize: 11,
     fontWeight: '900',
     paddingHorizontal: 8,
@@ -772,6 +1094,104 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
     overflow: 'hidden',
+    ...cardShadow,
+  },
+  preTransferCard: {
+    backgroundColor: '#FFF8EF',
+    borderColor: '#F0E4D0',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  preTransferHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  preTransferTitle: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  preTransferWarning: {
+    color: colors.red,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  preTransferEmpty: {
+    color: colors.subtleText,
+    fontSize: 13,
+  },
+  preTransferChips: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  preTransferChip: {
+    backgroundColor: colors.surface,
+    borderColor: '#C15B1B',
+    borderRadius: radii.pill,
+    borderWidth: 1.5,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+  },
+  preTransferChipActive: {
+    backgroundColor: '#C15B1B',
+  },
+  preTransferChipText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  preTransferChipTextActive: {
+    color: colors.surface,
+  },
+  preTransferPending: {
+    color: '#C15B1B',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  lastTrainCard: {
+    backgroundColor: '#FDECEC',
+    borderColor: '#F4D6D6',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: 4,
+    padding: spacing.md,
+  },
+  lastTrainTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  lastTrainTitle: {
+    color: colors.red,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  lastTrainBody: {
+    color: colors.subtleText,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  expressNotice: {
+    backgroundColor: '#FFF8EF',
+    borderColor: '#F0E4D0',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: 4,
+    padding: spacing.md,
+  },
+  expressNoticeTitle: {
+    color: '#C15B1B',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  expressNoticeBody: {
+    color: colors.subtleText,
+    fontSize: 13,
+    lineHeight: 18,
   },
   trainRow: {
     alignItems: 'center',
@@ -784,11 +1204,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   trainRowSelected: {
-    backgroundColor: '#F1F7F3',
+    backgroundColor: '#F0F1F4',
   },
   trainNoBadge: {
     alignItems: 'center',
-    backgroundColor: '#E7F0EA',
+    backgroundColor: '#EBF4FF',
     borderRadius: radii.pill,
     height: 32,
     justifyContent: 'center',
@@ -812,7 +1232,7 @@ const styles = StyleSheet.create({
   simBadge: {
     backgroundColor: '#FFF1E7',
     borderRadius: radii.pill,
-    color: '#A64E16',
+    color: '#C15B1B',
     fontSize: 10,
     fontWeight: '900',
     paddingHorizontal: 7,
@@ -821,7 +1241,7 @@ const styles = StyleSheet.create({
   simBadgeLarge: {
     backgroundColor: '#FFF1E7',
     borderRadius: radii.pill,
-    color: '#A64E16',
+    color: '#C15B1B',
     fontSize: 11,
     fontWeight: '900',
     paddingHorizontal: 8,
@@ -851,6 +1271,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
+    ...cardShadow,
   },
   stationTimelineRow: {
     alignItems: 'center',
@@ -859,8 +1280,8 @@ const styles = StyleSheet.create({
     minHeight: 34,
   },
   timelineDot: {
-    backgroundColor: '#D7D0C4',
-    borderColor: '#D7D0C4',
+    backgroundColor: '#C2C5CC',
+    borderColor: '#C2C5CC',
     borderRadius: radii.pill,
     borderWidth: 2,
     height: 13,
@@ -881,9 +1302,9 @@ const styles = StyleSheet.create({
     color: colors.muted,
   },
   nowPill: {
-    backgroundColor: '#E7F0EA',
+    backgroundColor: '#EBF4FF',
     borderRadius: radii.pill,
-    color: colors.green,
+    color: colors.accent,
     fontSize: 11,
     fontWeight: '900',
     paddingHorizontal: 8,

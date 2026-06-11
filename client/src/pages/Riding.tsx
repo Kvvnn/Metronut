@@ -22,13 +22,30 @@ import {
   getLineInfo,
   getPracticalTransferSeconds,
   getStationInfo,
-  getStationsByLine,
 } from "@/lib/pathfinder";
-import type { Station } from "@/lib/pathfinder";
+import {
+  SIM_TRAIN_PREFIX,
+  isPastLastTrain,
+  advanceFakeTrains,
+  dedupeTrainsByNo,
+  enrichTrains,
+  filterSameDirectionTrains,
+  formatPositionAge,
+  generateFakeTrains,
+  getForwardDistance,
+  isBeforeBoardingStation,
+  isCircularLineId,
+  isDeepInactiveTrain,
+  isSimTrainNo,
+  orientRideStations,
+} from "@shared/metro/ridingTrains";
+import type { OrientedStations, TrainEnrichment, TrainInactiveLevel } from "@shared/metro/ridingTrains";
 import { getTrainPositions } from "@/lib/realtimeApi";
 import type { TrainPosition } from "@/lib/realtimeApi";
 import TransferMiniSheet from "@/components/TransferMiniSheet";
 import type { TransferSegmentData } from "@/components/TransferMiniSheet";
+import Starfield from "@/components/space/Starfield";
+import VoyageTrack from "@/components/space/VoyageTrack";
 import { formatFastTransferInfo } from "@shared/fastTransfer";
 
 interface RideSegmentData {
@@ -64,12 +81,7 @@ interface RidingPayload {
   isTransferAtEnd: boolean;
 }
 
-interface EnrichedTrain extends TrainPosition {
-  posIdxOriented: number;
-  sameDirection: boolean | null;
-}
-
-type TrainInactiveLevel = "none" | "soft" | "deep";
+type EnrichedTrain = TrainPosition & TrainEnrichment;
 
 // 페이지 이탈(설정/노선 보기 등) 후 복귀 시 복원할 탑승 세션 상태.
 const RIDING_SESSION_KEY = "riding_session";
@@ -82,194 +94,7 @@ interface RidingSessionState {
   alarmBefore: number;
 }
 
-// 가짜 열차 식별 prefix. 실데이터 API trainNo는 보통 4자리 숫자라 충돌 X.
-const SIM_TRAIN_PREFIX = "S";
-
-/**
- * 시뮬레이션 모드용 가짜 열차 생성.
- * 노선 전체에 6대 분산 배치. 모두 우리 방향 (sameDirection: true).
- */
-function generateFakeTrains(
-  lineStations: { name: string }[],
-  updnLine: string,
-): EnrichedTrain[] {
-  if (lineStations.length === 0) return [];
-  const lastIdx = lineStations.length - 1;
-  const destination = lineStations[lastIdx]?.name ?? "";
-  const COUNT = 6;
-  const trains: EnrichedTrain[] = [];
-  for (let i = 0; i < COUNT; i++) {
-    const posIdx = Math.floor((lastIdx * (i + 1)) / (COUNT + 1));
-    const station = lineStations[posIdx];
-    if (!station) continue;
-    trains.push({
-      trainNo: `${SIM_TRAIN_PREFIX}${2001 + i}`,
-      stationName: station.name,
-      updnLine,
-      trainStatus: ["0", "1", "2"][i % 3], // 진입/정차/출발 섞임
-      destination,
-      receivedAt: new Date().toISOString(),
-      trainType: "일반",
-      posIdxOriented: posIdx,
-      sameDirection: true,
-    });
-  }
-  return trains;
-}
-
-/**
- * 가짜 열차 한 정거장씩 전진. 종착 도달하면 그대로 정지.
- * status 0→1→2 사이클 (진입→정차→출발).
- */
-function advanceFakeTrains(
-  trains: EnrichedTrain[],
-  lineStations: { name: string }[],
-): EnrichedTrain[] {
-  const lastIdx = lineStations.length - 1;
-  return trains.map(t => {
-    if (t.posIdxOriented >= lastIdx) return t;
-    const nextIdx = t.posIdxOriented + 1;
-    const nextStation = lineStations[nextIdx];
-    if (!nextStation) return t;
-    return {
-      ...t,
-      posIdxOriented: nextIdx,
-      stationName: nextStation.name,
-      trainStatus: t.trainStatus === "1" ? "2" : t.trainStatus === "2" ? "0" : "1",
-      receivedAt: new Date().toISOString(),
-    };
-  });
-}
-
-function isSimTrainNo(trainNo: string | null | undefined): boolean {
-  return !!trainNo && trainNo.startsWith(SIM_TRAIN_PREFIX);
-}
-
-function isCircularLineId(lineId: string | null | undefined) {
-  return lineId === "2";
-}
-
-function getForwardDistance(startIdx: number, endIdx: number, total: number) {
-  if (startIdx < 0 || endIdx < 0 || total <= 0) return Number.POSITIVE_INFINITY;
-  return (endIdx - startIdx + total) % total;
-}
-
-function getExpectedUpdnLine(lineId: string, isReversed: boolean) {
-  // 우이신설선 API는 북한산우이 -> 신설동 방향을 0으로 내려준다.
-  if (lineId === "ui") return isReversed ? "1" : "0";
-  return isReversed ? "0" : "1";
-}
-
-function isDeepInactiveTrain(
-  train: Pick<EnrichedTrain, "posIdxOriented" | "stationName">,
-  routeStationSet: Set<string>,
-  fromIdx: number,
-  toIdx: number,
-  totalStationCount: number,
-  isCircular: boolean,
-) {
-  if (train.posIdxOriented < 0) return false;
-  if (isCircular && fromIdx >= 0 && toIdx >= 0 && totalStationCount > 0) {
-    if (routeStationSet.has(train.stationName)) return false;
-    const routeDistance = getForwardDistance(fromIdx, toIdx, totalStationCount);
-    const distanceFromStart = getForwardDistance(fromIdx, train.posIdxOriented, totalStationCount);
-    const distanceToBoard = getForwardDistance(train.posIdxOriented, fromIdx, totalStationCount);
-    // 순환선에서는 선형 인덱스 뒤쪽 역이 "출발역 직전"일 수 있다.
-    // 출발역까지 남은 거리가 더 짧으면 탑승 후보(soft), 아니면 이미 도착역을 지난 후보(deep)로 본다.
-    if (distanceFromStart <= routeDistance) return false;
-    return distanceToBoard >= distanceFromStart;
-  }
-  const isPastDestination = toIdx >= 0 && train.posIdxOriented > toIdx;
-  const isOffRouteBranchStop =
-    fromIdx >= 0 && train.posIdxOriented >= fromIdx && !routeStationSet.has(train.stationName);
-  return isPastDestination || isOffRouteBranchStop;
-}
-
-function isBeforeBoardingStation(
-  train: Pick<EnrichedTrain, "posIdxOriented" | "stationName">,
-  routeStationSet: Set<string>,
-  fromIdx: number,
-  toIdx: number,
-  totalStationCount: number,
-  isCircular: boolean,
-) {
-  if (train.posIdxOriented < 0 || fromIdx < 0) return false;
-  if (!isCircular) return train.posIdxOriented < fromIdx;
-  if (routeStationSet.has(train.stationName)) return false;
-  const distanceFromStart = getForwardDistance(fromIdx, train.posIdxOriented, totalStationCount);
-  const distanceToBoard = getForwardDistance(train.posIdxOriented, fromIdx, totalStationCount);
-  const routeDistance = getForwardDistance(fromIdx, toIdx, totalStationCount);
-  return distanceFromStart > routeDistance && distanceToBoard < distanceFromStart;
-}
-
-type OrientedStations = {
-  stations: Station[];
-  fromIdx: number;
-  toIdx: number;
-  expectedUpdnLine: string | null;
-};
-
-// 노선 역들을 진행 방향 순서로 정렬하는 순수 함수.
-// 현재 ride(orientedLineStations)와 "다음 환승 노선" 위치 계산에 함께 쓴다.
-function orientRideStations(
-  lineId: string,
-  fromStationName: string,
-  toStationName: string,
-  stationNames: string[],
-): OrientedStations {
-  const lineStations = getStationsByLine(lineId);
-  const fromIdx = lineStations.findIndex(s => s.name === fromStationName);
-  const toIdx = lineStations.findIndex(s => s.name === toStationName);
-  if (fromIdx < 0) return { stations: lineStations, fromIdx, toIdx, expectedUpdnLine: null };
-
-  // 인접 두 역으로 방향 결정 (실패 시 from→to 폴백)
-  let isReversed: boolean | null = null;
-  if (stationNames.length >= 2) {
-    const a = lineStations.findIndex(s => s.name === stationNames[0]);
-    const b = lineStations.findIndex(s => s.name === stationNames[1]);
-    if (a >= 0 && b >= 0) isReversed = b < a;
-  }
-  if (isReversed === null && toIdx >= 0) isReversed = toIdx < fromIdx;
-  if (isReversed === null) return { stations: lineStations, fromIdx, toIdx, expectedUpdnLine: null };
-
-  const expectedUpdnLine = getExpectedUpdnLine(lineId, isReversed);
-  if (!isReversed) return { stations: lineStations, fromIdx, toIdx, expectedUpdnLine };
-  const reversed = [...lineStations].reverse();
-  return {
-    stations: reversed,
-    fromIdx: reversed.findIndex(s => s.name === fromStationName),
-    toIdx: toIdx >= 0 ? reversed.findIndex(s => s.name === toStationName) : -1,
-    expectedUpdnLine,
-  };
-}
-
-// API 위치 → 진행방향 인덱스가 붙은 EnrichedTrain.
-function enrichTrains(positions: TrainPosition[], oriented: OrientedStations): EnrichedTrain[] {
-  const stationIndex = new Map(oriented.stations.map((s, i) => [s.name, i]));
-  return positions.map(p => {
-    const posIdx = stationIndex.get(p.stationName) ?? -1;
-    const destIdx = stationIndex.get(p.destination) ?? -1;
-    const sameDirection = posIdx >= 0 && destIdx >= 0 ? destIdx > posIdx : null;
-    return { ...p, posIdxOriented: posIdx, sameDirection };
-  });
-}
-
-// 우리 진행 방향 열차만 남긴다 (선택된 열차는 무조건 통과).
-function filterSameDirectionTrains(
-  enriched: EnrichedTrain[],
-  oriented: OrientedStations,
-  selectedNo: string | null,
-): EnrichedTrain[] {
-  const { fromIdx, expectedUpdnLine } = oriented;
-  if (fromIdx < 0) return enriched;
-  return enriched.filter(t => {
-    if (selectedNo && t.trainNo === selectedNo) return true;
-    if (expectedUpdnLine && t.updnLine && t.updnLine !== expectedUpdnLine) return false;
-    if (expectedUpdnLine && t.updnLine === expectedUpdnLine) return true;
-    if (t.sameDirection === true) return true;
-    return false;
-  });
-}
+const TRAIN_POSITION_POLL_MS = 15000;
 
 export default function Riding() {
   const [, setLocation] = useLocation();
@@ -422,6 +247,14 @@ export default function Riding() {
   const activeTransferSegment =
     currentSegment?.type === "transfer" ? currentSegment : upcomingTransferSegment;
   const nextLineName = nextRideSegment?.lineName ?? null;
+  // 막차가 끊긴 노선/방향에서는 열차를 고를 수 없게 한다.
+  const nowForLastTrain = new Date();
+  const isPastLastTrainForRide = ridingData
+    ? isPastLastTrain(ridingData.lineId, ridingData.fromStationName, ridingData.toStationName, nowForLastTrain)
+    : false;
+  const isPastLastTrainForNext = nextRideSegment
+    ? isPastLastTrain(nextRideSegment.lineId, nextRideSegment.fromStationName, nextRideSegment.toStationName, nowForLastTrain)
+    : false;
   const nextOriented = useMemo<OrientedStations | null>(() => {
     if (nextRideIdx < 0 || !route) return null;
     const seg = route.segments[nextRideIdx];
@@ -541,23 +374,44 @@ export default function Riding() {
       //   4) sameDirection === false: 반대 방향 → 제외
       const enriched = enrichTrains(positions, orientedLineStations);
       const filtered = filterSameDirectionTrains(enriched, orientedLineStations, trainNoRef.current);
+      const selectedNo = trainNoRef.current;
+      const selectedTrain = selectedNo
+        ? filtered.find(train => train.trainNo === selectedNo) ?? null
+        : null;
+      const freshFiltered = filtered.filter(train => !train.isStale);
+      const visibleFiltered = filtered.filter(
+        train => !train.isStale || (selectedNo !== null && train.trainNo === selectedNo),
+      );
       if (positions.length === 0) {
         setTrainPositionError("서울시 API 응답에 현재 열차 위치가 없습니다.");
       } else if (filtered.length === 0) {
         setTrainPositionError(
           `${ridingData.lineName} ${ridingData.direction} 열차를 찾지 못했습니다.`,
         );
+      } else if (selectedTrain?.isStale) {
+        setTrainPositionError(
+          `${selectedTrain.trainNo}호 위치가 ${formatPositionAge(
+            selectedTrain.receivedAtAgeSeconds,
+          )} 전 수신된 값입니다. 새 위치를 기다리는 중입니다.`,
+        );
+      } else if (freshFiltered.length === 0) {
+        const latestAge = filtered
+          .map(train => train.receivedAtAgeSeconds)
+          .filter((age): age is number => age !== undefined)
+          .sort((a, b) => a - b)[0];
+        setTrainPositionError(
+          `서울시 위치 데이터가 ${formatPositionAge(latestAge)} 전 값입니다. 새 위치를 기다리는 중입니다.`,
+        );
       } else {
         setTrainPositionError(null);
       }
-      setAvailableTrains(filtered);
+      setAvailableTrains(dedupeTrainsByNo(visibleFiltered));
       return null;
     };
 
-    void poll().then(errorCode => {
+    void poll().then(() => {
       if (cancelled) return;
-      if (errorCode === "ERROR-337") return;
-      interval = window.setInterval(poll, selectedTrainNo ? 15000 : 60000);
+      interval = window.setInterval(poll, TRAIN_POSITION_POLL_MS);
     });
     return () => {
       cancelled = true;
@@ -583,11 +437,14 @@ export default function Riding() {
         );
         return;
       }
-      const enriched = enrichTrains(positions, nextOriented);
-      setNextLineTrains(filterSameDirectionTrains(enriched, nextOriented, null));
+      const enriched = enrichTrains(
+        positions.filter(position => !position.isStale),
+        nextOriented,
+      );
+      setNextLineTrains(dedupeTrainsByNo(filterSameDirectionTrains(enriched, nextOriented, null)));
     };
     void poll();
-    interval = window.setInterval(poll, 15000);
+    interval = window.setInterval(poll, TRAIN_POSITION_POLL_MS);
     return () => {
       cancelled = true;
       if (interval !== undefined) window.clearInterval(interval);
@@ -988,6 +845,10 @@ export default function Riding() {
 
   const onSelectTrain = (train: EnrichedTrain) => {
     if (!ridingData) return;
+    if (isPastLastTrainForRide) {
+      toast("이미 막차가 끊겨 열차를 고를 수 없습니다.");
+      return;
+    }
     trainNoRef.current = train.trainNo;
     setSelectedTrainNo(train.trainNo);
     setSelectedTrainSnapshot(train);
@@ -1018,6 +879,10 @@ export default function Riding() {
 
   // 환승 전역에서 다음 노선 열차를 미리 골라둔다. 실제 환승 시 carryover가 적용.
   const onPreSelectNextTrain = (trainNo: string) => {
+    if (isPastLastTrainForNext) {
+      toast("환승할 노선의 막차가 끊겨 열차를 고를 수 없습니다.");
+      return;
+    }
     const next = pendingNextTrainNo === trainNo ? null : trainNo;
     setPendingNextTrainNo(next);
     pendingNextTrainNoRef.current = next;
@@ -1227,6 +1092,14 @@ export default function Riding() {
       <h2 className="truncate px-1 text-[20px] font-bold leading-tight text-[#1B2838]">
         열차를 고르세요
       </h2>
+      {isPastLastTrainForRide && (
+        <div className="mt-2 rounded-xl border border-[#F3D6D6] bg-[#FDF1F1] px-3 py-2">
+          <p className="text-[11px] font-bold text-[#C0392B]">막차 종료</p>
+          <p className="mt-0.5 text-[12px] font-medium leading-relaxed text-[#6E6E73]">
+            이 방향 막차가 이미 끊겨 열차를 고를 수 없습니다.
+          </p>
+        </div>
+      )}
       {hasFetched && trainPositionError && (
         <div className="mt-2 rounded-xl border border-[#F0E4D0] bg-[#FFF8EF] px-3 py-2">
           <p className="text-[11px] font-bold text-[#C97A1B]">실시간 위치 확인 필요</p>
@@ -1264,7 +1137,9 @@ export default function Riding() {
           <span>빠른 환승 {fastTransferLabel}</span>
         </div>
       )}
-      {nextBoardable.length === 0 ? (
+      {isPastLastTrainForNext ? (
+        <p className="px-1 text-[12px] font-semibold text-[#C0392B]">막차가 끊겨 열차를 고를 수 없습니다.</p>
+      ) : nextBoardable.length === 0 ? (
         <p className="px-1 text-[12px] text-[#8E8E93]">다음 노선 열차 위치를 확인하는 중…</p>
       ) : (
         <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
@@ -1537,152 +1412,199 @@ export default function Riding() {
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
-                className="ios-card overflow-hidden p-5"
+                className="space-card p-5"
               >
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <Clock size={14} className="text-[#4A90D9]" />
-                    <span className="text-[12px] font-semibold text-[#8E8E93]">
-                      {ridingData.fromStationName}역까지
-                    </span>
+                <Starfield
+                  speed={selectedTrainPos?.trainStatus === "1" ? 0.12 : 0.55}
+                  shootingStars
+                />
+                <div className="relative z-10">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Clock size={14} className="text-[#9FC2FF]" />
+                      <span className="text-[12px] font-semibold text-[#9AA3C0]">
+                        {ridingData.fromStationName}역까지
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {expressSkipInfo && (
+                        <span
+                          className="rounded-md px-2 py-1 text-[10px] font-bold text-white"
+                          style={{ backgroundColor: lineColor }}
+                        >
+                          {expressSkipInfo.type}
+                        </span>
+                      )}
+                      <span className="rounded-md bg-white/10 px-2 py-1 text-[10px] font-bold text-[#9FC2FF]">
+                        {selectedTrainNo}호
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    {expressSkipInfo && (
-                      <span
-                        className="rounded-md px-2 py-1 text-[10px] font-bold text-white"
-                        style={{ backgroundColor: lineColor }}
-                      >
-                        {expressSkipInfo.type}
+
+                  {expressSkipInfo && expressSkipInfo.skipped && expressSkipInfo.skipped.length > 0 && (
+                    <p className="mb-3 rounded-lg bg-white/10 px-2.5 py-1.5 text-[11px] font-medium text-[#FFD9A8]">
+                      이 {expressSkipInfo.type}은 {expressSkipInfo.skipped.join(" · ")} 역을 통과합니다
+                    </p>
+                  )}
+
+                  <motion.div
+                    key={etaMinutes}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.25 }}
+                    className="flex items-baseline gap-2"
+                  >
+                    <span className="text-[13px] font-semibold text-[#E9EEF8]">약</span>
+                    <span
+                      className="font-bold leading-none tracking-tight text-white"
+                      style={{ fontSize: "64px", textShadow: `0 0 28px ${lineColor}` }}
+                    >
+                      {etaMinutes}
+                    </span>
+                    <span className="text-[20px] font-bold text-[#E9EEF8]">분 후 도착</span>
+                  </motion.div>
+
+                  <div className="mt-3 flex items-center gap-2 text-[13px] text-[#9AA3C0]">
+                    <span className="font-semibold text-[#E9EEF8]">
+                      {selectedTrainPos?.stationName}
+                    </span>
+                    <span>·</span>
+                    <span>
+                      {stationsUntilBoard === 1
+                        ? `${ridingData.fromStationName}역 곧 도착`
+                        : `${ridingData.fromStationName}역까지 ${stationsUntilBoard}정거장 전`}
+                    </span>
+                    {selectedTrainPos?.trainStatus === "1" && (
+                      <span className="text-[10px] bg-white/10 text-[#7BE3A3] px-1.5 py-0.5 rounded font-semibold ml-1">
+                        정차 중
                       </span>
                     )}
-                    <span className="rounded-md bg-[#EBF4FF] px-2 py-1 text-[10px] font-bold text-[#4A90D9]">
-                      {selectedTrainNo}호
-                    </span>
+                    {selectedTrainPos?.trainStatus === "0" && (
+                      <span className="text-[10px] bg-white/10 text-[#7BE3A3] px-1.5 py-0.5 rounded font-semibold ml-1">
+                        역 진입
+                      </span>
+                    )}
+                    {selectedTrainPos?.trainStatus === "2" && (
+                      <span className="text-[10px] bg-white/10 text-[#FFC08A] px-1.5 py-0.5 rounded font-semibold ml-1">
+                        출발 직후
+                      </span>
+                    )}
                   </div>
-                </div>
 
-                {expressSkipInfo && expressSkipInfo.skipped && expressSkipInfo.skipped.length > 0 && (
-                  <p className="mb-3 rounded-lg bg-[#FFF7ED] px-2.5 py-1.5 text-[11px] font-medium text-[#B45309]">
-                    이 {expressSkipInfo.type}은 {expressSkipInfo.skipped.join(" · ")} 역을 통과합니다
+                  <p className="mt-2 text-[11px] text-[#9AA3C0]">
+                    → {ridingData.toStationName}{ridingData.isTransferAtEnd ? " (환승)" : " (하차)"}
                   </p>
-                )}
-
-                <motion.div
-                  key={etaMinutes}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.25 }}
-                  className="flex items-baseline gap-2"
-                >
-                  <span className="text-[13px] font-semibold text-[#1B2838]">약</span>
-                  <span
-                    className="font-bold leading-none tracking-tight"
-                    style={{ color: lineColor, fontSize: "64px" }}
-                  >
-                    {etaMinutes}
-                  </span>
-                  <span className="text-[20px] font-bold text-[#1B2838]">분 후 도착</span>
-                </motion.div>
-
-                <div className="mt-3 flex items-center gap-2 text-[13px] text-[#8E8E93]">
-                  <span className="font-semibold text-[#1B2838]">
-                    {selectedTrainPos?.stationName}
-                  </span>
-                  <span>·</span>
-                  <span>
-                    {stationsUntilBoard === 1
-                      ? "곧 도착"
-                      : `${stationsUntilBoard}정거장 전`}
-                  </span>
-                  {selectedTrainPos?.trainStatus === "1" && (
-                    <span className="text-[10px] bg-[#F0FFF4] text-[#27AE60] px-1.5 py-0.5 rounded font-semibold ml-1">
-                      정차 중
-                    </span>
-                  )}
-                  {selectedTrainPos?.trainStatus === "0" && (
-                    <span className="text-[10px] bg-[#F0FFF4] text-[#27AE60] px-1.5 py-0.5 rounded font-semibold ml-1">
-                      역 진입
-                    </span>
-                  )}
-                  {selectedTrainPos?.trainStatus === "2" && (
-                    <span className="text-[10px] bg-[#FFF3EB] text-[#E67E22] px-1.5 py-0.5 rounded font-semibold ml-1">
-                      출발 직후
-                    </span>
-                  )}
                 </div>
-
-                {/* 진행 시각화: 열차가 출발역에 얼마나 가까운지 */}
-                <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[#F0F0F2]">
-                  <motion.div
-                    className="h-full rounded-full"
-                    style={{ backgroundColor: lineColor }}
-                    animate={{
-                      width: `${Math.max(8, 100 - Math.min(100, stationsUntilBoard * 12))}%`,
-                    }}
-                    transition={{ duration: 0.8, ease: [0.23, 1, 0.32, 1] }}
-                  />
-                </div>
-                <p className="mt-2 text-[11px] text-[#8E8E93]">
-                  → {ridingData.toStationName}{ridingData.isTransferAtEnd ? " (환승)" : " (하차)"}
-                </p>
               </motion.div>
             </div>
           ) : (
             <>
-              {/* === 탑승 중: 현재 위치 카드 === */}
+              {/* === 탑승 중: 우주 항해 카드 === */}
               <div className="px-4 pt-4">
-                <div className="ios-card overflow-hidden p-5">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <span className="text-[12px] font-semibold text-[#8E8E93]">현재 위치</span>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <span className="rounded-md bg-[#EBF4FF] px-2 py-1 text-[10px] font-bold text-[#4A90D9]">
-                        {selectedTrainNo}{isSimulated ? "" : "호"}
-                      </span>
-                      {isSimulated && (
-                        <span className="rounded-md bg-[#FFE9C7] px-2 py-1 text-[10px] font-bold text-[#C97A1B]">
-                          시뮬
+                <div className="space-card p-5">
+                  <Starfield
+                    speed={
+                      remaining === 0
+                        ? 0.04
+                        : selectedTrainPos?.trainStatus === "1"
+                          ? 0.12
+                          : 0.9
+                    }
+                    shootingStars
+                  />
+                  <div className="relative z-10">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <span className="text-[12px] font-semibold text-[#9AA3C0]">현재 위치</span>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="rounded-md bg-white/10 px-2 py-1 text-[10px] font-bold text-[#9FC2FF]">
+                          {selectedTrainNo}{isSimulated ? "" : "호"}
                         </span>
-                      )}
+                        {isSimulated && (
+                          <span className="rounded-md bg-white/10 px-2 py-1 text-[10px] font-bold text-[#FFD9A8]">
+                            시뮬
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <motion.div
-                    key={currentIdx}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <h1
-                      className="truncate text-[34px] font-bold leading-tight tracking-tight"
-                      style={{ color: lineColor }}
+                    <motion.div
+                      key={currentIdx}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3 }}
                     >
-                      {currentStation?.name}
-                    </h1>
-                    {currentIdx < destinationIdx && (
-                      <p className="mt-1 truncate text-[13px] font-medium text-[#8E8E93]">
-                        → {stations[currentIdx + 1]?.name} 방면 이동 중
-                      </p>
-                    )}
-                  </motion.div>
+                      <h1
+                        className="truncate text-[34px] font-bold leading-tight tracking-tight text-white"
+                        style={{ textShadow: `0 0 24px ${lineColor}` }}
+                      >
+                        {currentStation?.name}
+                      </h1>
+                      {currentIdx < destinationIdx && (
+                        <p className="mt-1 truncate text-[13px] font-medium text-[#9AA3C0]">
+                          → {stations[currentIdx + 1]?.name} 방면 이동 중
+                        </p>
+                      )}
+                    </motion.div>
 
-                  <div className="mt-5 grid grid-cols-3 divide-x divide-[#ECECF1] border-t border-[#F0F0F2] pt-4">
-                    <div className="pr-3">
-                      <p className="text-[10px] font-semibold text-[#8E8E93]">남은 역</p>
-                      <p className="mt-1 text-[21px] font-bold leading-none text-[#1B2838]">
-                        {remaining}<span className="text-[13px]">개</span>
-                      </p>
-                    </div>
-                    <div className="px-3">
-                      <p className="text-[10px] font-semibold text-[#8E8E93]">남은 시간</p>
-                      <p className="mt-1 text-[21px] font-bold leading-none text-[#1B2838]">
-                        {remainingTime}<span className="text-[13px]">분</span>
-                      </p>
-                    </div>
-                    <div className="min-w-0 pl-3">
-                      <p className="text-[10px] font-semibold text-[#8E8E93]">도착 예정</p>
-                      <p className="mt-1 truncate text-[19px] font-bold leading-none text-[#1B2838]">
-                        {arrivalTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                      </p>
+                    <VoyageTrack
+                      progress={destinationIdx > 0 ? currentIdx / destinationIdx : 1}
+                      stationCount={destinationIdx + 1}
+                      currentIndex={currentIdx}
+                      remaining={remaining}
+                      lineColor={lineColor}
+                      moving={remaining > 0 && selectedTrainPos?.trainStatus !== "1"}
+                    />
+
+                    {/* 착륙(하차)/도킹(환승) 연출 — 도착 순간에만 떠오른다 */}
+                    <AnimatePresence>
+                      {remaining === 0 && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10, scale: 0.96 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ type: "spring", stiffness: 160, damping: 18 }}
+                          className="mb-4 flex items-center gap-2.5 rounded-xl bg-white/10 px-3 py-2.5"
+                        >
+                          <span className="relative flex h-2.5 w-2.5 shrink-0">
+                            <motion.span
+                              className="absolute inset-0 rounded-full"
+                              style={{ backgroundColor: lineColor }}
+                              animate={{ scale: [1, 2.6], opacity: [0.8, 0] }}
+                              transition={{ duration: 1.6, repeat: Infinity, ease: "easeOut" }}
+                            />
+                            <span
+                              className="relative h-2.5 w-2.5 rounded-full"
+                              style={{ backgroundColor: lineColor }}
+                            />
+                          </span>
+                          <p className="min-w-0 truncate text-[13px] font-bold text-white">
+                            {arriveLabel === "환승"
+                              ? `${currentStation?.name} 도킹 — 환승 정거장입니다`
+                              : `${currentStation?.name} 착륙 — 항해 완료`}
+                          </p>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <div className="grid grid-cols-3 divide-x divide-white/10 border-t border-white/10 pt-4">
+                      <div className="pr-3">
+                        <p className="text-[10px] font-semibold text-[#9AA3C0]">남은 역</p>
+                        <p className="mt-1 text-[21px] font-bold leading-none text-white">
+                          {remaining}<span className="text-[13px]">개</span>
+                        </p>
+                      </div>
+                      <div className="px-3">
+                        <p className="text-[10px] font-semibold text-[#9AA3C0]">남은 시간</p>
+                        <p className="mt-1 text-[21px] font-bold leading-none text-white">
+                          {remainingTime}<span className="text-[13px]">분</span>
+                        </p>
+                      </div>
+                      <div className="min-w-0 pl-3">
+                        <p className="text-[10px] font-semibold text-[#9AA3C0]">도착 예정</p>
+                        <p className="mt-1 truncate text-[19px] font-bold leading-none text-white">
+                          {arrivalTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>

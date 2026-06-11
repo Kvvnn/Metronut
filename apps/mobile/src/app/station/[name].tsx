@@ -17,7 +17,7 @@ import {
   type StationFavoriteKind,
   type StationFavoriteMap,
 } from '@/lib/stationFavorites';
-import { colors, radii, spacing, typography } from '@/lib/theme';
+import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] ?? '' : value ?? '';
@@ -221,7 +221,7 @@ export default function StationScreen() {
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadArrivals} tintColor={colors.green} />}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadArrivals} tintColor={colors.accent} />}
     >
       <Stack.Screen options={{ title: `${stationName}역` }} />
 
@@ -230,7 +230,7 @@ export default function StationScreen() {
           <Text style={styles.kicker}>Station</Text>
           <View style={styles.titleRow}>
             <Text style={styles.title}>{stationName}역</Text>
-            {isFavoriteStation ? <Ionicons name="star" size={20} color="#B39116" /> : null}
+            {isFavoriteStation ? <Ionicons name="star" size={20} color="#C8A218" /> : null}
           </View>
           <Text style={styles.subtitle}>
             {selectedLineInfo?.name ?? selectedLine} 실시간 도착 정보와 첫차·막차를 확인합니다.
@@ -340,7 +340,7 @@ export default function StationScreen() {
 
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <Ionicons name="star-outline" size={17} color="#B39116" />
+          <Ionicons name="star-outline" size={17} color="#C8A218" />
           <Text style={styles.sectionTitle}>자주 가는 역</Text>
         </View>
       </View>
@@ -361,7 +361,7 @@ export default function StationScreen() {
         <>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
-              <Ionicons name="swap-horizontal-outline" size={17} color="#B85C18" />
+              <Ionicons name="swap-horizontal-outline" size={17} color="#C15B1B" />
               <Text style={styles.sectionTitle}>환승 정보</Text>
             </View>
           </View>
@@ -387,7 +387,7 @@ export default function StationScreen() {
       ) : null}
 
       <View style={styles.noticeCard}>
-        <Ionicons name="flash-outline" size={17} color={colors.green} />
+        <Ionicons name="flash-outline" size={17} color="#C15B1B" />
         <Text style={styles.noticeText}>
           빠른 환승 칸은 타고 온 노선과 갈아탈 노선의 방면에 따라 달라져서 경로 상세에서 조합 기준으로 보여줍니다.
         </Text>
@@ -415,7 +415,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   kicker: {
-    color: colors.green,
+    color: colors.accent,
     fontSize: 12,
     fontWeight: '900',
     textTransform: 'uppercase',
@@ -477,14 +477,14 @@ const styles = StyleSheet.create({
   simulationPill: {
     backgroundColor: '#FFF1E7',
     borderRadius: radii.pill,
-    color: '#A64E16',
+    color: '#C15B1B',
     fontSize: 11,
     fontWeight: '900',
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
   referencePill: {
-    backgroundColor: '#F0E9DB',
+    backgroundColor: '#F0F1F4',
     borderRadius: radii.pill,
     color: colors.subtleText,
     fontSize: 11,
@@ -508,6 +508,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
     overflow: 'hidden',
+    ...cardShadow,
   },
   arrivalRow: {
     alignItems: 'center',
@@ -547,7 +548,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   expressPill: {
-    backgroundColor: '#FFE6E6',
+    backgroundColor: '#FDECEC',
     borderRadius: radii.pill,
     color: colors.red,
     fontSize: 11,
@@ -592,7 +593,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   segmented: {
-    backgroundColor: '#EFE8DA',
+    backgroundColor: '#F0F1F4',
     borderRadius: radii.pill,
     flexDirection: 'row',
     padding: 3,
@@ -626,6 +627,7 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.sm,
     padding: spacing.md,
+    ...cardShadow,
   },
   scheduleDirection: {
     color: colors.subtleText,
@@ -713,8 +715,8 @@ const styles = StyleSheet.create({
   },
   noticeCard: {
     alignItems: 'flex-start',
-    backgroundColor: '#EAF3EF',
-    borderColor: '#CBE0D7',
+    backgroundColor: '#FFF8EF',
+    borderColor: '#F0E4D0',
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: 'row',

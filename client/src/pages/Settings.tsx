@@ -278,7 +278,7 @@ export default function Settings() {
           </button>
           <button
             className="w-full flex items-center justify-between px-4 py-3.5 btn-press"
-            onClick={() => toast("개인정보 처리방침 페이지가 곧 제공됩니다.")}
+            onClick={() => window.open("/privacy.html", "_blank", "noopener")}
           >
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-[#F5F5F7] flex items-center justify-center">

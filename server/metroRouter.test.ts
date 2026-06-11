@@ -12,6 +12,7 @@ describe("metroRouter", () => {
 
   afterEach(() => {
     delete process.env.SEOUL_METRO_API_KEY;
+    vi.useRealTimers();
   });
 
   describe("getApiStatus", () => {
@@ -172,6 +173,141 @@ describe("metroRouter", () => {
       expect(result.isSimulated).toBe(false);
       expect(result.arrivals[0].lineId).toBe("airport");
       expect(result.arrivals[0].trainType).toBe("급행");
+    });
+  });
+
+  describe("getTrainPositions", () => {
+    it("should return simulated state when API key is missing", async () => {
+      delete process.env.SEOUL_METRO_API_KEY;
+      const { metroRouter } = await import("./metroRouter");
+
+      const caller = metroRouter.createCaller({} as any);
+      const result = await caller.getTrainPositions({ lineName: "2호선" });
+
+      expect(result).toEqual({
+        positions: [],
+        isSimulated: true,
+        errorCode: "NO_API_KEY",
+        errorMessage: "서울시 지하철 API 키가 설정되어 있지 않습니다.",
+      });
+    });
+
+    it("should parse Seoul timestamps as KST and mark fresh positions", async () => {
+      process.env.SEOUL_METRO_API_KEY = "test-api-key-123";
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-05-30T14:09:41.000Z"));
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          realtimePositionList: [
+            {
+              statnNm: "종합운동장",
+              trainNo: "8426",
+              recptnDt: "2026-05-30 23:09:03",
+              updnLine: "0",
+              statnTnm: "을지로입구",
+              trainSttus: "2",
+              directAt: "0",
+            },
+          ],
+        }),
+      });
+
+      const { metroRouter } = await import("./metroRouter");
+      const caller = metroRouter.createCaller({} as any);
+      const result = await caller.getTrainPositions({ lineName: "2호선" });
+
+      expect(result.isSimulated).toBe(false);
+      expect(result.stalePositionCount).toBe(0);
+      expect(result.freshestReceivedAtAgeSeconds).toBe(38);
+      expect(result.positions[0]).toMatchObject({
+        trainNo: "8426",
+        stationName: "종합운동장",
+        destination: "을지로입구",
+        receivedAtAgeSeconds: 38,
+        isStale: false,
+        trainType: "일반",
+      });
+    });
+
+    it("should flag train positions older than the stale threshold", async () => {
+      process.env.SEOUL_METRO_API_KEY = "test-api-key-123";
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-05-30T14:09:41.000Z"));
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          realtimePositionList: [
+            {
+              statnNm: "신촌",
+              trainNo: "6414",
+              recptnDt: "2026-05-30 23:04:40",
+              updnLine: "0",
+              statnTnm: "성수종착",
+              trainSttus: "2",
+              directAt: "1",
+            },
+          ],
+        }),
+      });
+
+      const { metroRouter } = await import("./metroRouter");
+      const caller = metroRouter.createCaller({} as any);
+      const result = await caller.getTrainPositions({ lineName: "2호선" });
+
+      expect(result.stalePositionCount).toBe(1);
+      expect(result.staleAfterSeconds).toBe(180);
+      expect(result.positions[0]).toMatchObject({
+        trainNo: "6414",
+        receivedAtAgeSeconds: 301,
+        isStale: true,
+        trainType: "급행",
+      });
+    });
+
+    it("should dedupe duplicate train numbers by newest received timestamp", async () => {
+      process.env.SEOUL_METRO_API_KEY = "test-api-key-123";
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-05-30T14:09:41.000Z"));
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          realtimePositionList: [
+            {
+              statnNm: "이전역",
+              trainNo: "8426",
+              recptnDt: "2026-05-30 23:07:00",
+              updnLine: "0",
+              statnTnm: "을지로입구",
+              trainSttus: "1",
+              directAt: "0",
+            },
+            {
+              statnNm: "다음역",
+              trainNo: "8426",
+              recptnDt: "2026-05-30 23:08:00",
+              updnLine: "0",
+              statnTnm: "을지로입구",
+              trainSttus: "2",
+              directAt: "0",
+            },
+          ],
+        }),
+      });
+
+      const { metroRouter } = await import("./metroRouter");
+      const caller = metroRouter.createCaller({} as any);
+      const result = await caller.getTrainPositions({ lineName: "2호선" });
+
+      expect(result.positions).toHaveLength(1);
+      expect(result.positions[0]).toMatchObject({
+        trainNo: "8426",
+        stationName: "다음역",
+        trainStatus: "2",
+      });
     });
   });
 });

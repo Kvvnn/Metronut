@@ -22,7 +22,7 @@ export default function TabLayout() {
           fontSize: 20,
           fontWeight: '800',
         },
-        tabBarActiveTintColor: colors.green,
+        tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.muted,
         tabBarStyle: {
           backgroundColor: colors.surface,

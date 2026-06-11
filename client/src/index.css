@@ -235,3 +235,44 @@
   transform: scale(0.97);
   transition: transform 0.1s cubic-bezier(0.23, 1, 0.32, 1);
 }
+
+/* ===== Metronut 우주 유영 연출 ===== */
+
+/* 딥스페이스 카드: 어두운 성운 그라데이션 + 은은한 외곽 글로우 */
+.space-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.125rem;
+  background:
+    radial-gradient(120% 90% at 85% 0%, rgba(76, 100, 180, 0.35) 0%, transparent 55%),
+    radial-gradient(90% 70% at 10% 100%, rgba(120, 80, 200, 0.22) 0%, transparent 60%),
+    linear-gradient(160deg, #0b1026 0%, #141b3d 55%, #0e132e 100%);
+  box-shadow:
+    0 1px 3px rgba(8, 12, 40, 0.35),
+    0 12px 32px rgba(13, 18, 56, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* 무중력 부유 — 카드/아이콘이 천천히 떠다니는 느낌 */
+@keyframes space-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(0.6deg);
+  }
+}
+.space-float {
+  animation: space-float 5.5s ease-in-out infinite;
+}
+.space-float-slow {
+  animation: space-float 8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .space-float,
+  .space-float-slow {
+    animation: none;
+  }
+}

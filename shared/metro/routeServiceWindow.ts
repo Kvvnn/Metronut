@@ -1,6 +1,8 @@
 import { getFirstLastTrain } from "./firstLastTrain";
 import type { DayType } from "./firstLastTrain";
+import { getStationInfo } from "./pathfinder";
 import type { Route, RouteSegment } from "./pathfinder";
+import { getLastDepartureReaching, getScheduleDayType } from "./serviceSchedule";
 
 const SERVICE_DAY_BOUNDARY_MINUTES = 2 * 60;
 
@@ -105,6 +107,36 @@ export function getRouteServiceError(route: Route, baseTime: Date): RouteService
   }
 
   return null;
+}
+
+/**
+ * 두 역을 직통으로 잇는 노선들 중 도착역까지 실제로 가는 가장 늦은 막차의
+ * 출발역 기준 출발 시각(서비스분). 직통 노선이 없거나 스케줄이 없으면 null.
+ * 시간인지 탐색이 막차로 빈 결과를 줄 때 안내 문구에 정확한 시각을 넣는 용도.
+ */
+export function getLastDepartureForJourney(
+  fromName: string,
+  toName: string,
+  at: Date = new Date(),
+): number | null {
+  const fromStations = getStationInfo(fromName);
+  const toStations = getStationInfo(toName);
+  const dayType = getScheduleDayType(at);
+  let best: number | null = null;
+
+  for (const fromStation of fromStations) {
+    const toStation = toStations.find(station => station.lineId === fromStation.lineId);
+    if (!toStation) continue;
+    const last = getLastDepartureReaching(
+      fromStation.lineId,
+      fromStation.index,
+      toStation.index,
+      dayType,
+    );
+    if (last != null && (best == null || last > best)) best = last;
+  }
+
+  return best;
 }
 
 export function buildServiceErrorCopy(error: RouteServiceError): RouteServiceErrorCopy {

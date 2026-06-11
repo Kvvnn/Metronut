@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   resultPressed: {
-    backgroundColor: '#F0E9DB',
+    backgroundColor: colors.surfaceAlt,
   },
   stationName: {
     color: colors.text,

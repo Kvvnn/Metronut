@@ -15,26 +15,19 @@ import {
   getLineInfo,
   isLongTransferSegment,
   involvesScheduledLine,
-  getStationInfo,
 } from "@/lib/pathfinder";
-import { buildServiceErrorCopy, getRouteServiceError } from "@/lib/routeServiceWindow";
 import {
-  getLastDepartureReaching,
-  formatServiceMinute,
-  getScheduleDayType,
-} from "@/lib/serviceSchedule";
+  buildServiceErrorCopy,
+  getRouteServiceError,
+  getLastDepartureForJourney,
+} from "@/lib/routeServiceWindow";
+import { formatServiceMinute } from "@/lib/serviceSchedule";
 import type { Route } from "@/lib/pathfinder";
 import type { RouteServiceError, RouteServiceErrorCopy } from "@/lib/routeServiceWindow";
 
 /** 시간인지 탐색이 막차로 도달 불가라고 판단했을 때의 안내 문구. */
 function buildLastTrainNotice(from: string, to: string): RouteServiceErrorCopy {
-  const fromIdx = getStationInfo(from).find(s => s.lineId === "4")?.index;
-  const toIdx = getStationInfo(to).find(s => s.lineId === "4")?.index;
-  const dayType = getScheduleDayType(new Date());
-  const lastMin =
-    fromIdx != null && toIdx != null
-      ? getLastDepartureReaching("4", fromIdx, toIdx, dayType)
-      : null;
+  const lastMin = getLastDepartureForJourney(from, to, new Date());
   return {
     title: "막차가 끊겼습니다",
     description:
@@ -85,11 +78,13 @@ export default function RouteResult() {
       // 약간의 딜레이로 로딩 UX
       setTimeout(() => {
         const now = new Date();
-        // 운행계통 스케줄이 있는 노선(4호선)이 걸린 직통 경로는 시간인지 탐색을 사용한다.
-        const useTimed = !via && involvesScheduledLine(from, to);
+        // 전 노선에 운행계통 스케줄이 있어 막차·배차를 반영한 시간인지 탐색을 기본으로 쓴다.
+        const useTimed = involvesScheduledLine(from, via || undefined, to);
 
         if (useTimed) {
-          const found = findRoutes(from, to, { departAt: now });
+          const found = via
+            ? findRoutesVia(from, via, to, { departAt: now })
+            : findRoutes(from, to, { departAt: now });
           setRoutes(found);
           setRouteIndexes(found.map((_, i) => i));
           setServiceError(null);
@@ -192,6 +187,8 @@ export default function RouteResult() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.1, duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
               >
+                {/* 카드마다 위상을 어긋나게 해 무중력에 떠 있는 느낌 (진입 모션과 transform 충돌 방지용 별도 레이어) */}
+                <div className="space-float-slow" style={{ animationDelay: `${-idx * 1.3}s` }}>
                 <button
                   className="relative w-full ios-card p-4 text-left btn-press"
                   onClick={() => {
@@ -290,6 +287,7 @@ export default function RouteResult() {
                   {/* Chevron */}
                   <ChevronRight size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#C7C7CC]" />
                 </button>
+                </div>
               </motion.div>
             );
           })

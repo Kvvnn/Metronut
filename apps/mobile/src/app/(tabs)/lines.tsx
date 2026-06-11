@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { getAllLines, getStationsByLine, type Line, type Station } from '@shared/metro/pathfinder';
 
 import { MetroOfficialMap } from '@/components/MetroOfficialMap';
-import { colors, radii, spacing, typography } from '@/lib/theme';
+import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
 
 function stationPath(station: Station) {
   return `/station/${encodeURIComponent(station.name)}?line=${encodeURIComponent(station.lineId)}` as Href;
@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   kicker: {
-    color: colors.green,
+    color: colors.accent,
     fontSize: 12,
     fontWeight: '900',
     textTransform: 'uppercase',
@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
     color: colors.subtleText,
   },
   segmented: {
-    backgroundColor: '#EFE8DA',
+    backgroundColor: colors.surfaceAlt,
     borderRadius: radii.md,
     flexDirection: 'row',
     gap: 4,
@@ -177,6 +177,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
     overflow: 'hidden',
+    ...cardShadow,
   },
   lineHeader: {
     alignItems: 'center',
@@ -236,7 +237,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   moreButtonText: {
-    color: colors.green,
+    color: colors.accent,
     fontSize: 13,
     fontWeight: '900',
   },

@@ -12,6 +12,5 @@ config.resolver.extraNodeModules = {
   ...(config.resolver.extraNodeModules ?? {}),
   '@shared': sharedRoot,
 };
-config.resolver.unstable_enableSymlinks = true;
 
 module.exports = config;

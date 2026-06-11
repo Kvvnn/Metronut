@@ -160,14 +160,37 @@ function SelectedPill({
   );
 }
 
-export function MetroOfficialMap() {
+export interface MetroOfficialMapProps {
+  /** 제어 모드: 부모가 from/via/to를 보유. 주어지면 내부 상태 대신 사용한다. */
+  selections?: { from: string; via: string; to: string };
+  /** 제어 모드에서 역 역할이 선택될 때 호출. 주어지면 내부 navigation/검색 strip을 쓰지 않는다. */
+  onStationRoleSelect?: (name: string, role: StationRole, lineId: string) => void;
+  /** 지도 영역을 부모 높이에 꽉 채운다(홈 히어로). 기본은 고정 높이(노선 탭). */
+  fillHeight?: boolean;
+  /** 검색 strip·노선 필터·메타 행을 숨긴다(홈이 자체 검색카드를 제공). */
+  hideChrome?: boolean;
+}
+
+export function MetroOfficialMap({
+  selections,
+  onStationRoleSelect,
+  fillHeight = false,
+  hideChrome = false,
+}: MetroOfficialMapProps = {}) {
   const router = useRouter();
   const lines = useMemo(() => getAllLines(), []);
+  const controlled = Boolean(selections && onStationRoleSelect);
   const [selectedLineId, setSelectedLineId] = useState('');
   const [selectedStation, setSelectedStation] = useState<MapStation | null>(null);
-  const [from, setFrom] = useState('');
-  const [via, setVia] = useState('');
-  const [to, setTo] = useState('');
+  const [internalFrom, setInternalFrom] = useState('');
+  const [internalVia, setInternalVia] = useState('');
+  const [internalTo, setInternalTo] = useState('');
+  const from = controlled ? selections!.from : internalFrom;
+  const via = controlled ? selections!.via : internalVia;
+  const to = controlled ? selections!.to : internalTo;
+  const setFrom = controlled ? () => {} : setInternalFrom;
+  const setVia = controlled ? () => {} : setInternalVia;
+  const setTo = controlled ? () => {} : setInternalTo;
   const [viewport, setViewport] = useState<ViewportSize>({ width: 0, height: DEFAULT_VIEWPORT_HEIGHT });
   const [transform, setTransform] = useState<MapTransform>({ scale: 0.24, x: -132, y: -92 });
   const gestureRef = useRef({
@@ -244,6 +267,11 @@ export function MetroOfficialMap() {
     if (!selectedStation) return;
 
     selectionHaptic();
+    if (controlled) {
+      onStationRoleSelect!(selectedStation.name, role, selectedStation.lineId);
+      setSelectedStation(null);
+      return;
+    }
     if (role === 'from') {
       setFrom(selectedStation.name);
       if (to === selectedStation.name) setTo('');
@@ -275,7 +303,8 @@ export function MetroOfficialMap() {
   const selectedLine = selectedLineId ? getLineInfo(selectedLineId) : null;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, fillHeight && styles.containerFill]}>
+      {hideChrome ? null : (
       <View style={styles.searchStrip}>
         <View style={styles.selectionRow}>
           {from ? <SelectedPill role="from" value={from} onClear={() => setFrom('')} /> : null}
@@ -295,7 +324,9 @@ export function MetroOfficialMap() {
           <Text style={styles.searchButtonText}>경로 검색</Text>
         </Pressable>
       </View>
+      )}
 
+      {hideChrome ? null : (
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.lineFilters}>
         <Pressable
           onPress={() => {
@@ -325,8 +356,9 @@ export function MetroOfficialMap() {
           );
         })}
       </ScrollView>
+      )}
 
-      <View style={styles.mapShell}>
+      <View style={[styles.mapShell, fillHeight && styles.mapShellFill]}>
         <View style={styles.mapViewport} onLayout={handleLayout} {...panResponder.panHandlers}>
           <View
             style={[
@@ -405,12 +437,14 @@ export function MetroOfficialMap() {
         </View>
       </View>
 
+      {hideChrome ? null : (
       <View style={styles.mapMetaRow}>
         <Text style={styles.mapMetaText}>
           {selectedLine ? `${selectedLine.name} ${mapStations.length}개 역 표시` : `전체 ${mapStations.length}개 역 표시`}
         </Text>
         <Text style={styles.mapMetaText}>공식 지도</Text>
       </View>
+      )}
 
       {selectedStation ? (
         <View style={styles.stationSheet}>
@@ -462,6 +496,10 @@ export function MetroOfficialMap() {
 const styles = StyleSheet.create({
   container: {
     gap: spacing.md,
+  },
+  containerFill: {
+    flex: 1,
+    gap: 0,
   },
   searchStrip: {
     backgroundColor: colors.surface,
@@ -546,12 +584,17 @@ const styles = StyleSheet.create({
     color: colors.surface,
   },
   mapShell: {
-    backgroundColor: '#EFE9DC',
+    backgroundColor: '#EAEDF1',
     borderColor: colors.border,
     borderRadius: radii.md,
     borderWidth: 1,
     height: DEFAULT_VIEWPORT_HEIGHT,
     overflow: 'hidden',
+  },
+  mapShellFill: {
+    flex: 1,
+    borderRadius: 0,
+    borderWidth: 0,
   },
   mapViewport: {
     flex: 1,

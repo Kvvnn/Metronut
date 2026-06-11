@@ -121,3 +121,6 @@ api/pnpm-lock.yaml
 # Tool artifacts
 .playwright-mcp/
 .superset/
+
+# Large raw data (source for scripts/generate-service-schedule.mjs, regenerate locally)
+*.csv

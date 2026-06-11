@@ -10,6 +10,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useLocation, useSearch, useParams } from "wouter";
 import { ArrowLeft, Play, Clock, Train, Footprints, ChevronDown, ChevronUp, Star } from "lucide-react";
 import { motion } from "framer-motion";
+import Starfield from "@/components/space/Starfield";
 import {
   findRoutes,
   findRoutesVia,
@@ -95,12 +96,14 @@ export default function RouteDetail() {
   useEffect(() => {
     if (from && to) {
       // RouteResult와 동일한 탐색을 써야 인덱스가 일치한다.
-      const routes =
-        !via && involvesScheduledLine(from, to)
-          ? findRoutes(from, to, { departAt: new Date() })
-          : via
-            ? findRoutesVia(from, via, to)
-            : findRoutes(from, to);
+      const departAt = new Date();
+      const routes = involvesScheduledLine(from, via || undefined, to)
+        ? via
+          ? findRoutesVia(from, via, to, { departAt })
+          : findRoutes(from, to, { departAt })
+        : via
+          ? findRoutesVia(from, via, to)
+          : findRoutes(from, to);
       if (routes[routeIdx]) {
         setRoute(routes[routeIdx]);
       }
@@ -289,10 +292,20 @@ export default function RouteDetail() {
                 sessionStorage.setItem("riding_route", JSON.stringify(payload));
                 setLocation("/riding");
               }}
-              className="pointer-events-auto flex w-full items-center justify-center gap-2 rounded-2xl bg-[#1B2838] py-4 text-[16px] font-semibold text-white shadow-lg btn-press"
+              className="pointer-events-auto relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl py-4 text-[16px] font-semibold text-white btn-press"
+              style={{
+                background:
+                  "radial-gradient(120% 90% at 85% 0%, rgba(76,100,180,0.4) 0%, transparent 55%), linear-gradient(160deg, #141b3d 0%, #0b1026 100%)",
+                boxShadow:
+                  "0 6px 20px rgba(13, 18, 56, 0.45), inset 0 1px 0 rgba(255,255,255,0.12)",
+              }}
             >
-              <Play size={18} fill="white" />
-              탑승 안내 시작
+              {/* 항해 출발 버튼 — 별이 흐르는 발사대 */}
+              <Starfield speed={0.5} density={0.22} />
+              <span className="relative z-10 flex items-center gap-2">
+                <Play size={18} fill="white" />
+                탑승 안내 시작
+              </span>
             </button>
           </div>
         </div>

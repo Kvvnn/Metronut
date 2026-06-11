@@ -26,6 +26,9 @@ export interface TrainPosition {
   trainStatus: string;
   destination: string;
   receivedAt: string;
+  receivedAtEpochMs?: number;
+  receivedAtAgeSeconds?: number;
+  isStale?: boolean;
   trainType: string;
 }
 
@@ -34,6 +37,10 @@ export interface TrainPositionsResult {
   isSimulated: boolean;
   errorCode?: string;
   errorMessage?: string;
+  stalePositionCount?: number;
+  freshestReceivedAt?: string;
+  freshestReceivedAtAgeSeconds?: number;
+  staleAfterSeconds?: number;
 }
 
 function isConfiguredApiBaseUrl() {

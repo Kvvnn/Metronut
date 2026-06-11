@@ -9,6 +9,7 @@ import {
   findRoutesVia,
   formatTransferDuration,
   getLineInfo,
+  involvesScheduledLine,
   isLongTransferSegment,
   type Route,
   type RouteSegment,
@@ -25,7 +26,7 @@ import {
 import { impactHaptic, selectionHaptic, successHaptic } from '@/lib/haptics';
 import { isFavoriteRoute, toggleFavoriteRoute } from '@/lib/routeFavorites';
 import { saveRidingRoute, type RidingRoutePayload } from '@/lib/ridingSession';
-import { colors, radii, spacing, typography } from '@/lib/theme';
+import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] ?? '' : value ?? '';
@@ -216,7 +217,7 @@ function TransferSegment({
     <View style={styles.transferCard}>
       <View style={styles.transferHeader}>
         <View style={styles.transferIcon}>
-          <Ionicons name="walk-outline" size={18} color="#B85C18" />
+          <Ionicons name="walk-outline" size={18} color="#C15B1B" />
         </View>
         <View style={styles.segmentTitleWrap}>
           <View style={styles.transferTitleRow}>
@@ -232,7 +233,7 @@ function TransferSegment({
       </View>
 
       <View style={styles.fastTransferRow}>
-        <Ionicons name="flash-outline" size={15} color="#B85C18" />
+        <Ionicons name="flash-outline" size={15} color="#C15B1B" />
         <Text style={styles.fastTransferText}>빠른 환승 {fastTransferLabel}</Text>
       </View>
     </View>
@@ -255,8 +256,15 @@ export default function RouteDetailScreen() {
   const routes = useMemo(() => {
     if (!from || !to) return [] as Route[];
 
-    const found = via ? findRoutesVia(from, via, to) : findRoutes(from, to);
     const now = new Date();
+    // route-result와 동일한 탐색을 써야 routeIndex가 일치한다.
+    if (involvesScheduledLine(from, via || undefined, to)) {
+      return via
+        ? findRoutesVia(from, via, to, { departAt: now })
+        : findRoutes(from, to, { departAt: now });
+    }
+
+    const found = via ? findRoutesVia(from, via, to) : findRoutes(from, to);
     return found.filter((route) => !getRouteServiceError(route, now));
   }, [from, to, via]);
 
@@ -370,7 +378,7 @@ export default function RouteDetailScreen() {
             style={({ pressed }) => [styles.favoriteButton, isFavorite && styles.favoriteButtonActive, pressed && styles.pressed]}
             onPress={handleToggleFavorite}
           >
-            <Ionicons name={isFavorite ? 'star' : 'star-outline'} size={21} color={isFavorite ? '#B39116' : colors.muted} />
+            <Ionicons name={isFavorite ? 'star' : 'star-outline'} size={21} color={isFavorite ? '#C8A218' : colors.muted} />
           </Pressable>
         </View>
 
@@ -421,7 +429,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   kicker: {
-    color: colors.green,
+    color: colors.accent,
     fontSize: 12,
     fontWeight: '900',
     textTransform: 'uppercase',
@@ -467,14 +475,14 @@ const styles = StyleSheet.create({
   },
   favoriteButton: {
     alignItems: 'center',
-    backgroundColor: '#F6F4EF',
+    backgroundColor: '#F0F1F4',
     borderRadius: radii.pill,
     height: 44,
     justifyContent: 'center',
     width: 44,
   },
   favoriteButtonActive: {
-    backgroundColor: '#FFF2BE',
+    backgroundColor: '#FFF7D9',
   },
   statsRow: {
     flexDirection: 'row',
@@ -482,7 +490,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   statPill: {
-    backgroundColor: '#F8F7F4',
+    backgroundColor: '#F0F1F4',
     borderColor: colors.border,
     borderRadius: radii.sm,
     borderWidth: 1,
@@ -516,6 +524,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.md,
     padding: spacing.lg,
+    ...cardShadow,
   },
   segmentHeader: {
     alignItems: 'center',
@@ -579,7 +588,7 @@ const styles = StyleSheet.create({
   },
   middleButton: {
     alignItems: 'center',
-    backgroundColor: '#F8F7F4',
+    backgroundColor: '#F0F1F4',
     borderRadius: radii.sm,
     flexDirection: 'row',
     gap: spacing.sm,
@@ -608,7 +617,7 @@ const styles = StyleSheet.create({
     minHeight: 28,
   },
   middleDot: {
-    backgroundColor: '#CBC6BA',
+    backgroundColor: '#C2C5CC',
     borderRadius: radii.pill,
     height: 6,
     width: 6,
@@ -620,8 +629,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   transferCard: {
-    backgroundColor: '#FFF7EF',
-    borderColor: '#F0D4B6',
+    backgroundColor: '#FFF8EF',
+    borderColor: '#F0E4D0',
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
@@ -633,7 +642,7 @@ const styles = StyleSheet.create({
   },
   transferIcon: {
     alignItems: 'center',
-    backgroundColor: '#FFE9D6',
+    backgroundColor: '#FBEAD9',
     borderRadius: radii.pill,
     height: 34,
     justifyContent: 'center',
@@ -646,7 +655,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   transferTitle: {
-    color: '#B85C18',
+    color: '#C15B1B',
     fontSize: 15,
     fontWeight: '900',
   },
@@ -657,9 +666,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   longTransferPill: {
-    backgroundColor: '#FFE4CF',
+    backgroundColor: '#FBEAD9',
     borderRadius: radii.pill,
-    color: '#9F4C13',
+    color: '#C15B1B',
     fontSize: 11,
     fontWeight: '900',
     paddingHorizontal: 8,
@@ -667,7 +676,7 @@ const styles = StyleSheet.create({
   },
   fastTransferRow: {
     alignItems: 'center',
-    backgroundColor: '#FFEEDC',
+    backgroundColor: '#FFF3E6',
     borderRadius: radii.sm,
     flexDirection: 'row',
     gap: spacing.xs,
@@ -675,7 +684,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   fastTransferText: {
-    color: '#8F4611',
+    color: '#C15B1B',
     flex: 1,
     fontSize: 13,
     fontWeight: '900',

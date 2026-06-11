@@ -20,7 +20,7 @@ export const STATION_FAVORITE_KINDS: {
   { kind: 'school', label: '학교', icon: 'school-outline', color: '#0B6B56' },
 ];
 
-const STATION_FAVORITES_KEY = 'metro_station_favorites';
+export const STATION_FAVORITES_KEY = 'metro_station_favorites';
 
 export type StationFavoriteMap = Partial<Record<StationFavoriteKind, StationFavorite>>;
 

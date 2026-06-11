@@ -133,8 +133,15 @@ interface ExpressService {
   name: string;
   shortName: string;
   color: string;
-  /** 정차역 간 평균 소요시간(분). 탐색·표시에 함께 사용 */
-  hopMinutes: number;
+  /**
+   * 역간격(일반열차 한 정거장 거리)당 평균 소요시간(분).
+   * 정차역 사이 통과역 수가 hop마다 크게 다르므로(예: 경인특급 구로→부천은 7개 역간격),
+   * hop당 고정시간이 아니라 "통과한 역간격 수 × 이 값"으로 hop 시간을 계산한다.
+   * 값은 실제 시각표 소요시간을 전 구간 역간격 수로 나눠 보정한 근사치.
+   */
+  minutesPerGap: number;
+  /** 평균 배차 간격의 절반(분) — 탑승 대기 기대값. 급행은 배차가 길어 일반보다 크다. */
+  avgWaitMinutes: number;
   /** 행선지 라벨 접두어 */
   kind: "급행" | "특급" | "직통";
   terminusA: string;
@@ -152,7 +159,8 @@ const EXPRESS_SERVICES: ExpressService[] = [
     name: "경인선 급행",
     shortName: "경인급행",
     color: "#003688",
-    hopMinutes: 2.5,
+    minutesPerGap: 1.7,
+    avgWaitMinutes: 5,
     kind: "급행",
     terminusA: "용산",
     terminusB: "동인천",
@@ -164,7 +172,8 @@ const EXPRESS_SERVICES: ExpressService[] = [
     name: "경인선 특급",
     shortName: "경인특급",
     color: "#ED1C24",
-    hopMinutes: 2.5,
+    minutesPerGap: 1.55,
+    avgWaitMinutes: 12,
     kind: "특급",
     terminusA: "용산",
     terminusB: "동인천",
@@ -176,7 +185,8 @@ const EXPRESS_SERVICES: ExpressService[] = [
     name: "경부·장항선 급행",
     shortName: "장항급행",
     color: "#003688",
-    hopMinutes: 3.5,
+    minutesPerGap: 2.1,
+    avgWaitMinutes: 10,
     kind: "급행",
     terminusA: "용산",
     terminusB: "신창",
@@ -188,7 +198,8 @@ const EXPRESS_SERVICES: ExpressService[] = [
     name: "경부선 급행",
     shortName: "경부급행",
     color: "#0052A4",
-    hopMinutes: 3.5,
+    minutesPerGap: 2.1,
+    avgWaitMinutes: 10,
     kind: "급행",
     terminusA: "서울역",
     terminusB: "신창",
@@ -200,7 +211,8 @@ const EXPRESS_SERVICES: ExpressService[] = [
     name: "9호선 급행",
     shortName: "9급행",
     color: "#8C7B5A",
-    hopMinutes: 3,
+    minutesPerGap: 1.2,
+    avgWaitMinutes: 4,
     kind: "급행",
     terminusA: "종합운동장",
     terminusB: "김포공항",
@@ -215,7 +227,8 @@ const EXPRESS_SERVICES: ExpressService[] = [
     name: "수인분당선 급행",
     shortName: "분당급행",
     color: "#E0A900",
-    hopMinutes: 3,
+    minutesPerGap: 1.8,
+    avgWaitMinutes: 12,
     kind: "급행",
     terminusA: "왕십리",
     terminusB: "수원",
@@ -227,7 +240,8 @@ const EXPRESS_SERVICES: ExpressService[] = [
     name: "경춘선 급행",
     shortName: "경춘급행",
     color: "#0C8E72",
-    hopMinutes: 4,
+    minutesPerGap: 3.0,
+    avgWaitMinutes: 15,
     kind: "급행",
     terminusA: "청량리",
     terminusB: "춘천",
@@ -236,9 +250,42 @@ const EXPRESS_SERVICES: ExpressService[] = [
 ];
 
 const EXPRESS_LINE_IDS = new Set(EXPRESS_SERVICES.map(service => service.id));
-const EXPRESS_HOP_MINUTES: Record<string, number> = Object.fromEntries(
-  EXPRESS_SERVICES.map(service => [service.id, service.hopMinutes]),
+
+/**
+ * 급행 노선의 인접 정차역 사이 역간격(일반열차 한 정거장) 수.
+ * 키: `${expressLineId}:${fromStationId}>${toStationId}` (양방향 등록).
+ * 1호선 분기처럼 역 index가 분기별 블록 단위라 index 차이로 거리를 잴 수 없어,
+ * 본 노선 엣지를 BFS해 실제 통과 역간격 수를 센다. 소요시간·요금 환산에 사용.
+ */
+const expressHopGaps = new Map<string, number>();
+
+function expressHopKey(lineId: string, fromId: string, toId: string) {
+  return `${lineId}:${fromId}>${toId}`;
+}
+
+/**
+ * 노선별 평균 배차 간격의 절반(분) — 탑승 대기 기대값(평시 기준 근사).
+ * 출발·환승 후·열차 갈아타기 등 "새 열차에 오르는" 모든 시점에 가산해
+ * 대기 없는 이상적 시간이 아니라 체감 소요시간에 가깝게 추정한다.
+ */
+const LINE_BOARDING_WAIT_MINUTES: Record<string, number> = {
+  "1": 3, "2": 2.5, "3": 3, "4": 3, "5": 3, "6": 3.5, "7": 3, "8": 3.5, "9": 3.5,
+  "2-seongsu": 4, "2-sinjeong": 4,
+  gyeongui: 5, airport: 4, shinbundang: 3, gyeongchun: 6, suinbundang: 4, ui: 3,
+  incheon1: 3.5, incheon2: 4, gimpo: 2.5, seohaeline: 5, sinlim: 3, gtxa: 5,
+};
+const EXPRESS_BOARDING_WAIT_MINUTES: Record<string, number> = Object.fromEntries(
+  EXPRESS_SERVICES.map(service => [service.id, service.avgWaitMinutes]),
 );
+const DEFAULT_BOARDING_WAIT_MINUTES = 3;
+
+function getBoardingWaitMinutes(lineId: string): number {
+  return (
+    EXPRESS_BOARDING_WAIT_MINUTES[lineId] ??
+    LINE_BOARDING_WAIT_MINUTES[lineId] ??
+    DEFAULT_BOARDING_WAIT_MINUTES
+  );
+}
 
 function isExpressLineId(lineId: string) {
   return EXPRESS_LINE_IDS.has(lineId);
@@ -289,7 +336,7 @@ interface AdjacentEdge extends TransferDetails {
   isTransfer: boolean;
 }
 
-function getBaseLineId(lineId: string) {
+export function getBaseLineId(lineId: string) {
   return VIRTUAL_LINE_TO_BASE[lineId] ?? lineId;
 }
 
@@ -383,6 +430,9 @@ export function formatTransferDuration(segment: Pick<RouteSegment, "time" | "tra
   return `${minutes}분`;
 }
 
+/** 순환선 본선 역 수 (2호선 시청0~충정로42). 회전 방향 판정용. */
+const LOOP_MAIN_LINE_LENGTH: Record<string, number> = { "2": 43 };
+
 function getPatternTerminusStation(terminus: string, baseLineId: string): Station | undefined {
   return stationsByName.get(terminus)?.find(s => getBaseLineId(s.lineId) === baseLineId);
 }
@@ -408,6 +458,23 @@ function chooseOperatingPattern(
   });
   const branchMatches = (p: OperatingPattern) =>
     Array.from(usedBranches).every(b => p.branches.includes(b));
+
+  // 2호선 본선(순환) 주행은 terminus 매칭이 아니라 회전 방향으로 내선/외선을 고른다.
+  // (지선 패턴의 terminus가 본선 분기점(신도림·성수)이라 잘못 매칭되는 것을 방지)
+  if (baseLineId === "2" && segmentStations.every(s => (s.branch ?? "본선") === "본선")) {
+    const loopLength = LOOP_MAIN_LINE_LENGTH["2"];
+    let forwardSteps = 0;
+    let backwardSteps = 0;
+    for (let i = 0; i < segmentStations.length - 1; i++) {
+      const a = segmentStations[i].index;
+      const b = segmentStations[i + 1].index;
+      if ((a + 1) % loopLength === b) forwardSteps++;
+      else if ((b + 1) % loopLength === a) backwardSteps++;
+    }
+    const loopLabel = forwardSteps >= backwardSteps ? "내선순환" : "외선순환";
+    const loopPattern = patterns.find(p => p.label === loopLabel);
+    if (loopPattern) return loopPattern;
+  }
 
   // 1순위: 종착역이 패턴의 terminus와 정확히 일치 (방향 모호성 없음)
   const exactTerminus = patterns.filter(p => p.terminus === last.name);
@@ -457,6 +524,19 @@ function chooseOperatingPattern(
   return pool[0];
 }
 
+/**
+ * 미개통 구간 — 탐색 그래프에서 제외한다.
+ * GTX-A 서울역~수서 연결 구간(삼성 경유)은 2026-06 기준 미개통
+ * (서울역~수서 직결은 2026년 말, 삼성역 정차는 2028년 예정).
+ * 개통 시 이 목록에서 해당 엣지를 제거하면 된다.
+ */
+const NOT_YET_OPEN_EDGES = new Set([
+  "gtxa_GA05>gtxa_GA06",
+  "gtxa_GA06>gtxa_GA05",
+  "gtxa_GA06>gtxa_GA07",
+  "gtxa_GA07>gtxa_GA06",
+]);
+
 // 초기화
 function initializeGraph() {
   // 노선 맵
@@ -478,6 +558,7 @@ function initializeGraph() {
 
   // 인접 리스트 구축
   metroData.edges.forEach((edge: Edge) => {
+    if (NOT_YET_OPEN_EDGES.has(`${edge.from}>${edge.to}`)) return;
     const fromStation = stationMap.get(edge.from);
     const toStation = stationMap.get(edge.to);
     const lineId = fromStation && toStation
@@ -495,15 +576,52 @@ function initializeGraph() {
     });
   });
 
-  // 급행/특급/직통 가상 노선 엣지 추가 (정차역만 직접 연결)
+  // 본 노선별 역간 인접 맵 (급행 hop의 역간격 수 BFS용)
+  const baseLineAdjacency = new Map<string, Map<string, string[]>>();
+  metroData.edges.forEach((edge: Edge) => {
+    if (!baseLineAdjacency.has(edge.lineId)) baseLineAdjacency.set(edge.lineId, new Map());
+    const adj = baseLineAdjacency.get(edge.lineId)!;
+    if (!adj.has(edge.from)) adj.set(edge.from, []);
+    adj.get(edge.from)!.push(edge.to);
+  });
+
+  // 본 노선을 따라 fromId→toId까지의 역간격 수 (BFS 최단 hop 수)
+  const countLineGaps = (baseLineId: string, fromId: string, toId: string): number => {
+    const adj = baseLineAdjacency.get(baseLineId);
+    if (!adj || fromId === toId) return fromId === toId ? 0 : 1;
+    const visited = new Set([fromId]);
+    let frontier = [fromId];
+    let depth = 0;
+    while (frontier.length > 0) {
+      depth++;
+      const next: string[] = [];
+      for (const id of frontier) {
+        for (const n of adj.get(id) ?? []) {
+          if (n === toId) return depth;
+          if (!visited.has(n)) {
+            visited.add(n);
+            next.push(n);
+          }
+        }
+      }
+      frontier = next;
+    }
+    return 1; // 본 노선으로 연결이 안 되면(데이터 결손) 최소 한 정거장으로 폴백
+  };
+
+  // 급행/특급/직통 가상 노선 엣지 추가 (정차역만 직접 연결, 통과 역간격 수에 비례한 시간)
   EXPRESS_SERVICES.forEach(service => {
-    const { stationIds, id: lineId, hopMinutes } = service;
+    const { stationIds, id: lineId, minutesPerGap, base } = service;
     for (let i = 0; i < stationIds.length - 1; i++) {
       const a = stationIds[i];
       const b = stationIds[i + 1];
+      const gaps = countLineGaps(base, a, b);
+      expressHopGaps.set(expressHopKey(lineId, a, b), gaps);
+      expressHopGaps.set(expressHopKey(lineId, b, a), gaps);
+      const time = gaps * minutesPerGap;
       ([[a, b], [b, a]] as const).forEach(([from, to]) => {
         if (!adjacencyList.has(from)) adjacencyList.set(from, []);
-        adjacencyList.get(from)!.push({ to, lineId, time: hopMinutes, isTransfer: false });
+        adjacencyList.get(from)!.push({ to, lineId, time, isTransfer: false });
       });
     }
   });
@@ -562,39 +680,47 @@ function initializeGraph() {
 
 initializeGraph();
 
-// 우선순위 큐 (간단한 구현)
+// 우선순위 큐 (이진 최소 힙 — 삽입/추출 O(log n))
 class PriorityQueue<T> {
-  private items: { element: T; priority: number }[] = [];
+  private heap: { element: T; priority: number }[] = [];
 
   enqueue(element: T, priority: number) {
-    const item = { element, priority };
-    let added = false;
-    for (let i = 0; i < this.items.length; i++) {
-      if (item.priority < this.items[i].priority) {
-        this.items.splice(i, 0, item);
-        added = true;
-        break;
-      }
+    const heap = this.heap;
+    heap.push({ element, priority });
+    let i = heap.length - 1;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (heap[parent].priority <= heap[i].priority) break;
+      [heap[parent], heap[i]] = [heap[i], heap[parent]];
+      i = parent;
     }
-    if (!added) this.items.push(item);
   }
 
   dequeue(): T | undefined {
-    return this.items.shift()?.element;
+    const heap = this.heap;
+    if (heap.length === 0) return undefined;
+    const top = heap[0];
+    const last = heap.pop()!;
+    if (heap.length > 0) {
+      heap[0] = last;
+      let i = 0;
+      for (;;) {
+        const left = i * 2 + 1;
+        const right = left + 1;
+        let smallest = i;
+        if (left < heap.length && heap[left].priority < heap[smallest].priority) smallest = left;
+        if (right < heap.length && heap[right].priority < heap[smallest].priority) smallest = right;
+        if (smallest === i) break;
+        [heap[smallest], heap[i]] = [heap[i], heap[smallest]];
+        i = smallest;
+      }
+    }
+    return top.element;
   }
 
   isEmpty(): boolean {
-    return this.items.length === 0;
+    return this.heap.length === 0;
   }
-}
-
-interface DijkstraNode {
-  stationId: string;
-  time: number;
-  transfers: number;
-  prevNode: string | null;
-  prevLine: string;
-  isTransfer: boolean;
 }
 
 type SearchMode = 'fastest' | 'fewest-transfers' | 'least-walking';
@@ -611,6 +737,10 @@ interface PreviousStep {
   transferTime: number;
   transferSeconds?: number;
   transferDistanceMeters?: number;
+  /** 이 한 스텝의 주행 시간(분). 환승 스텝은 0. 세그먼트 시간 합산용. */
+  rideTime: number;
+  /** 출발·환승 후 새 열차 탑승 대기(분). 갈아타기 대기는 transferTime에 담는다. */
+  boardWaitMin: number;
 }
 
 interface PathNode {
@@ -621,6 +751,8 @@ interface PathNode {
   transferTime: number;
   transferSeconds?: number;
   transferDistanceMeters?: number;
+  rideTime: number;
+  boardWaitMin: number;
 }
 
 /**
@@ -645,11 +777,11 @@ export function findRoutes(fromName: string, toName: string, options?: FindRoute
     baseRoutes[0],
   );
 
-  return sortRoutesByUsefulness(
-    dedupeRoutes([...baseRoutes, ...alternativeRoutes]),
-  )
-    .filter(isPresentableRoute)
-    .slice(0, MAX_ROUTE_CANDIDATES);
+  return dedupeRoutesCoarse(
+    sortRoutesByUsefulness(
+      dedupeRoutes([...baseRoutes, ...alternativeRoutes]),
+    ).filter(isPresentableRoute),
+  ).slice(0, MAX_ROUTE_CANDIDATES);
 }
 
 function findBaseRoutes(fromName: string, toName: string): Route[] {
@@ -681,13 +813,89 @@ function findBaseRoutes(fromName: string, toName: string): Route[] {
   return routes.filter(route => route.segments.length > 0);
 }
 
+/**
+ * 출발 집합에서 모든 역까지의 최단시간(분) 근사 테이블.
+ * 그래프가 대칭(엣지·환승 모두 양방향 동일 시간)이라 도착역 기준 테이블도
+ * 같은 함수로 계산해 역방향 거리로 쓸 수 있다. 경유 후보 선별용.
+ */
+function computeMinDistByStation(fromStations: Station[]): Map<string, number> {
+  const dist = new Map<string, number>();
+  const minByStation = new Map<string, number>();
+  const visited = new Set<string>();
+  const pq = new PriorityQueue<string>();
+
+  fromStations.forEach(station => {
+    const key = makeStateKey(station.id, "");
+    dist.set(key, 0);
+    pq.enqueue(key, 0);
+  });
+
+  while (!pq.isEmpty()) {
+    const currentKey = pq.dequeue()!;
+    if (visited.has(currentKey)) continue;
+    visited.add(currentKey);
+
+    const { stationId, lineId: currentLineId } = parseStateKey(currentKey);
+    const currentDist = dist.get(currentKey) ?? Infinity;
+    if (currentDist < (minByStation.get(stationId) ?? Infinity)) {
+      minByStation.set(stationId, currentDist);
+    }
+
+    for (const neighbor of adjacencyList.get(stationId) || []) {
+      let weight: number;
+      let nextKey: string;
+      if (neighbor.isTransfer) {
+        weight = neighbor.time + getLineChangePenalty(currentLineId, neighbor.lineId);
+        nextKey = makeStateKey(neighbor.to, "");
+      } else {
+        const boarding = currentLineId !== neighbor.lineId;
+        const boardWaitMin = boarding ? getBoardingWaitMinutes(neighbor.lineId) : 0;
+        const penalty = currentLineId && boarding
+          ? getLineChangePenalty(currentLineId, neighbor.lineId)
+          : 0;
+        weight = neighbor.time + boardWaitMin + penalty;
+        nextKey = makeStateKey(neighbor.to, neighbor.lineId);
+      }
+      const newDist = currentDist + weight;
+      if (newDist < (dist.get(nextKey) ?? Infinity)) {
+        dist.set(nextKey, newDist);
+        pq.enqueue(nextKey, newDist);
+      }
+    }
+  }
+
+  return minByStation;
+}
+
+/** 경유 대안 탐색에서 풀 탐색할 환승역 후보 수 상한. */
+const VIA_ESTIMATE_CANDIDATE_LIMIT = 18;
+
 function findTransferStationAlternatives(
   fromName: string,
   toName: string,
   fastestRoute: Route,
 ): Route[] {
   const alternativeRoutes: Route[] = [];
-  const candidateNames = getTransferStationCandidateNames(fromName, toName);
+
+  // 모든 환승역(약 110개)에 풀 탐색을 돌리는 대신, 출발/도착 기준 거리 테이블 2회로
+  // "출발→경유→도착" 시간 하한을 추정해 유망한 후보만 추린다.
+  const distFrom = computeMinDistByStation(stationsByName.get(fromName) ?? []);
+  const distTo = computeMinDistByStation(stationsByName.get(toName) ?? []);
+  const maxUsefulTime = fastestRoute.totalTime + MAX_ALTERNATIVE_EXTRA_MINUTES;
+  const candidateNames = getTransferStationCandidateNames(fromName, toName)
+    .map(name => {
+      const estimate = Math.min(
+        ...(stationsByName.get(name) ?? []).map(
+          station =>
+            (distFrom.get(station.id) ?? Infinity) + (distTo.get(station.id) ?? Infinity),
+        ),
+      );
+      return { name, estimate };
+    })
+    .filter(candidate => candidate.estimate <= maxUsefulTime)
+    .sort((a, b) => a.estimate - b.estimate)
+    .slice(0, VIA_ESTIMATE_CANDIDATE_LIMIT)
+    .map(candidate => candidate.name);
 
   for (const viaName of candidateNames) {
     const firstLegRoutes = findBaseRoutes(fromName, viaName).slice(0, VIA_LEG_CANDIDATE_LIMIT);
@@ -780,9 +988,20 @@ function dedupeRoutes(routes: Route[]) {
   }, []);
 }
 
-export function findRoutesVia(fromName: string, viaName: string, toName: string): Route[] {
+export function findRoutesVia(
+  fromName: string,
+  viaName: string,
+  toName: string,
+  options?: FindRoutesOptions,
+): Route[] {
   if (!viaName || viaName === fromName || viaName === toName) {
-    return findRoutes(fromName, toName);
+    return findRoutes(fromName, toName, options);
+  }
+
+  // 출발 시각이 주어지면 두 다리를 시각 연쇄(첫 다리 도착 시각 → 둘째 다리 출발)로 탐색해
+  // 경유 검색에도 막차·배차를 반영한다.
+  if (options?.departAt && involvesScheduledLine(fromName, viaName, toName)) {
+    return findRoutesViaTimed(fromName, viaName, toName, options.departAt, options.dayType);
   }
 
   const firstLegRoutes = findBaseRoutes(fromName, viaName);
@@ -800,14 +1019,64 @@ export function findRoutesVia(fromName: string, viaName: string, toName: string)
     }
   }
 
-  return combinedRoutes
-    .filter(isPresentableRoute)
-    .sort((a, b) => {
+  return dedupeRoutesCoarse(
+    combinedRoutes
+      .filter(isPresentableRoute)
+      .sort((a, b) => {
+        if (a.totalTime !== b.totalTime) return a.totalTime - b.totalTime;
+        if (a.transferCount !== b.transferCount) return a.transferCount - b.transferCount;
+        return a.stationCount - b.stationCount;
+      }),
+  ).slice(0, MAX_ROUTE_CANDIDATES);
+}
+
+function findRoutesViaTimed(
+  fromName: string,
+  viaName: string,
+  toName: string,
+  departAt: Date,
+  dayTypeOverride?: DayType,
+): Route[] {
+  const fromStations = stationsByName.get(fromName);
+  const viaStations = stationsByName.get(viaName);
+  const toStations = stationsByName.get(toName);
+  if (!fromStations || !viaStations || !toStations) return [];
+
+  const firstLegRoutes = findRoutesTimed(fromStations, viaStations, departAt, dayTypeOverride)
+    .slice(0, VIA_LEG_CANDIDATE_LIMIT);
+  if (firstLegRoutes.length === 0) return [];
+
+  const combinedRoutes: Route[] = [];
+  for (const firstLeg of firstLegRoutes) {
+    const secondDepartAt = new Date(departAt.getTime() + firstLeg.totalTime * 60_000);
+    const secondLegRoutes = findRoutesTimed(
+      viaStations,
+      toStations,
+      secondDepartAt,
+      dayTypeOverride,
+    ).slice(0, VIA_LEG_CANDIDATE_LIMIT);
+
+    for (const secondLeg of secondLegRoutes) {
+      const combined = combineRoutesAtVia(firstLeg, secondLeg);
+      // timed 경로의 totalTime은 도착 시각 기반이므로 다리 합으로 보정한다.
+      const bridgeTime =
+        getSegmentTimeSum(combined) - getSegmentTimeSum(firstLeg) - getSegmentTimeSum(secondLeg);
+      combined.totalTime = Math.round(
+        firstLeg.totalTime + Math.max(0, bridgeTime) + secondLeg.totalTime,
+      );
+      if (!isDuplicateRoute(combinedRoutes, combined)) {
+        combinedRoutes.push(combined);
+      }
+    }
+  }
+
+  return dedupeRoutesCoarse(
+    combinedRoutes.filter(isPresentableRoute).sort((a, b) => {
       if (a.totalTime !== b.totalTime) return a.totalTime - b.totalTime;
       if (a.transferCount !== b.transferCount) return a.transferCount - b.transferCount;
       return a.stationCount - b.stationCount;
-    })
-    .slice(0, MAX_ROUTE_CANDIDATES);
+    }),
+  ).slice(0, MAX_ROUTE_CANDIDATES);
 }
 
 function combineRoutesAtVia(firstLeg: Route, secondLeg: Route): Route {
@@ -823,19 +1092,33 @@ function combineRoutesAtVia(firstLeg: Route, secondLeg: Route): Route {
       firstRide.lineId !== secondRide.lineId
     )
   ) {
-    const transferDetails = getTransferDetails(
-      firstRide.toStation.name,
-      firstRide.lineId,
-      secondRide.lineId,
-    );
+    // 같은 역에서 같은 노선의 일반↔급행으로 이어지는 경우는 도보 환승이 아니라
+    // 열차 갈아타기 — dijkstra 경로와 동일하게 표시해 중복 dedupe·환승 집계를 맞춘다.
+    const sameStationTrainChange =
+      firstRide.toStation.id === secondRide.fromStation.id &&
+      getBaseLineId(firstRide.lineId) === getBaseLineId(secondRide.lineId);
+    // 같은 역 갈아타기는 두 번째 다리의 첫 탑승 시간에 배차 대기가 이미 포함되어
+    // 있으므로 다리 자체에는 시간을 더하지 않는다 (이중 계산 방지).
+    const transferDetails = sameStationTrainChange
+      ? { time: 0 }
+      : getTransferDetails(
+          firstRide.toStation.name,
+          firstRide.lineId,
+          secondRide.lineId,
+        );
     bridgeSegments.push({
       fromStation: firstRide.toStation,
       toStation: secondRide.fromStation,
       lineId: secondRide.lineId,
-      lineName: '경유 환승',
-      lineColor: '#888',
+      lineName: sameStationTrainChange
+        ? isExpressLineId(secondRide.lineId) ? '급행 탑승' : '일반 탑승'
+        : '경유 환승',
+      lineColor: sameStationTrainChange
+        ? lineMap.get(secondRide.lineId)?.color || '#888'
+        : '#888',
       stations: [firstRide.toStation, secondRide.fromStation],
       isTransfer: true,
+      isTrainChange: sameStationTrainChange || undefined,
       ...transferDetails,
     });
   }
@@ -924,8 +1207,14 @@ function getRouteSignature(route: Route) {
 
   route.segments.forEach(segment => {
     if (segment.isTransfer) {
+      // 같은 역 열차 갈아타기(일반↔급행)는 경로 정체성에 영향이 없다. 갈아타기 위치
+      // 표기만 다른 동일 경로(예: 환승 후 급행 탑승 vs 급행으로 바로 환승)를 같은
+      // 시그니처로 묶기 위해 건너뛰고, 환승 대상 노선도 base ID로 정규화한다.
+      if (segment.isTrainChange) return;
       flushRide();
-      normalizedParts.push(`transfer:${segment.fromStation.name}:${segment.lineId}`);
+      normalizedParts.push(
+        `transfer:${segment.fromStation.name}:${getBaseLineId(segment.lineId)}`,
+      );
       return;
     }
 
@@ -953,6 +1242,56 @@ function getRouteSignature(route: Route) {
   return normalizedParts.join("|");
 }
 
+/**
+ * 거친 경로 시그니처: 연속한 같은 base 노선 탑승을 하나로 합치고 도보 환승만 남긴다.
+ * "어디서 급행↔일반을 갈아타느냐"만 다른 변형들(물리적으로 같은 여정)을 묶어,
+ * 최종 결과에서 가장 좋은 것 하나만 남기기 위한 용도.
+ */
+function getCoarseRouteSignature(route: Route) {
+  const parts: string[] = [];
+  let pending: { baseLineId: string; from: string; to: string } | null = null;
+
+  const flush = () => {
+    if (!pending) return;
+    parts.push(`ride:${pending.baseLineId}:${pending.from}:${pending.to}`);
+    pending = null;
+  };
+
+  route.segments.forEach(segment => {
+    if (segment.isTransfer) {
+      if (segment.isTrainChange) return;
+      flush();
+      parts.push(`transfer:${segment.fromStation.name}:${getBaseLineId(segment.lineId)}`);
+      return;
+    }
+    const baseLineId = getBaseLineId(segment.lineId);
+    if (pending && pending.baseLineId === baseLineId) {
+      pending.to = segment.toStation.name;
+      return;
+    }
+    flush();
+    pending = {
+      baseLineId,
+      from: segment.fromStation.name,
+      to: segment.toStation.name,
+    };
+  });
+
+  flush();
+  return parts.join("|");
+}
+
+/** 정렬된 경로 목록에서 거친 시그니처가 같은 것 중 첫 번째(가장 유용한 것)만 남긴다. */
+function dedupeRoutesCoarse(routes: Route[]) {
+  const seen = new Set<string>();
+  return routes.filter(route => {
+    const signature = getCoarseRouteSignature(route);
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
 function dijkstra(fromStations: Station[], toStations: Station[], mode: SearchMode): Route | null {
   const dist = new Map<string, number>();
   const prev = new Map<string, PreviousStep | null>();
@@ -969,8 +1308,13 @@ function dijkstra(fromStations: Station[], toStations: Station[], mode: SearchMo
     pq.enqueue(stateKey, 0);
   });
 
+  const visited = new Set<string>();
+
   while (!pq.isEmpty()) {
     const currentKey = pq.dequeue()!;
+    // 이미 확정된 상태의 stale 큐 항목은 재확장하지 않는다
+    if (visited.has(currentKey)) continue;
+    visited.add(currentKey);
     const { stationId: currentStationId, lineId: currentLineId } = parseStateKey(currentKey);
     const currentDist = dist.get(currentKey) ?? Infinity;
 
@@ -981,53 +1325,61 @@ function dijkstra(fromStations: Station[], toStations: Station[], mode: SearchMo
 
     const neighbors = adjacencyList.get(currentStationId) || [];
     for (const neighbor of neighbors) {
-      const lineChanged = Boolean(currentLineId && neighbor.lineId !== currentLineId);
-      const countsAsTransfer = neighbor.isTransfer || lineChanged;
-      const currentStation = stationMap.get(currentStationId);
-      const implicitTransferDetails = countsAsTransfer && !neighbor.isTransfer && currentStation
-        ? getTransferDetails(currentStation.name, currentLineId, neighbor.lineId)
-        : { time: TRANSFER_TIME };
-      const transferTime = countsAsTransfer
-        ? neighbor.isTransfer ? neighbor.time : implicitTransferDetails.time
-        : 0;
-      const transferSeconds = countsAsTransfer
-        ? neighbor.isTransfer ? neighbor.transferSeconds : implicitTransferDetails.transferSeconds
-        : undefined;
-      const transferDistanceMeters = countsAsTransfer
-        ? neighbor.isTransfer ? neighbor.transferDistanceMeters : implicitTransferDetails.transferDistanceMeters
-        : undefined;
-      const searchTransferPenalty = countsAsTransfer
+      // 도보 환승: 환승 후 상태는 "승강장(아직 탑승 전)" — lineId 빈 값.
+      // 이후 어떤 열차(일반/급행)를 타든 탑승 시점에 그 노선의 대기시간만 한 번 가산되어,
+      // 환승 직후 급행 탑승에 환승+갈아타기 비용이 이중으로 붙는 문제를 없앤다.
+      if (neighbor.isTransfer) {
+        let weight = neighbor.time + getLineChangePenalty(currentLineId, neighbor.lineId);
+        if (mode === 'fewest-transfers') weight += 15; // 환승에 높은 페널티
+        else if (mode === 'least-walking') weight += 8; // 도보(환승)에 중간 페널티
+
+        const newDist = currentDist + weight;
+        const nextKey = makeStateKey(neighbor.to, "");
+        if (newDist < (dist.get(nextKey) ?? Infinity)) {
+          dist.set(nextKey, newDist);
+          prev.set(nextKey, {
+            prevKey: currentKey,
+            lineId: neighbor.lineId,
+            isTransfer: true,
+            lineChanged: false,
+            transferTime: neighbor.time,
+            transferSeconds: neighbor.transferSeconds,
+            transferDistanceMeters: neighbor.transferDistanceMeters,
+            rideTime: 0,
+            boardWaitMin: 0,
+          });
+          transferCount.set(nextKey, (transferCount.get(currentKey) ?? 0) + 1);
+          pq.enqueue(nextKey, newDist);
+        }
+        continue;
+      }
+
+      // 탑승/주행: 새 열차에 오르는 시점(출발·환승 후·열차 갈아타기)에 배차 대기를 가산
+      const boarding = currentLineId !== neighbor.lineId;
+      const lineChanged = Boolean(currentLineId) && boarding; // 같은 역 열차 갈아타기
+      const boardWaitMin = boarding ? getBoardingWaitMinutes(neighbor.lineId) : 0;
+      const searchTransferPenalty = lineChanged
         ? getLineChangePenalty(currentLineId, neighbor.lineId)
         : 0;
-      let weight = neighbor.isTransfer
-        ? transferTime + searchTransferPenalty
-        : neighbor.time + transferTime + searchTransferPenalty;
-      const currentTransfers = transferCount.get(currentKey) ?? 0;
-      const newTransfers = currentTransfers + (countsAsTransfer ? 1 : 0);
-
-      // 모드별 가중치 조정
-      if (mode === 'fewest-transfers' && countsAsTransfer) {
-        weight += 15; // 환승에 높은 페널티
-      } else if (mode === 'least-walking' && countsAsTransfer) {
-        weight += 8; // 도보(환승)에 중간 페널티
-      }
+      let weight = neighbor.time + boardWaitMin + searchTransferPenalty;
+      // 열차 갈아타기는 도보 환승보다 가벼운 페널티 (시간인지 탐색과 동일 기준)
+      if (mode === 'fewest-transfers' && lineChanged) weight += 8;
+      else if (mode === 'least-walking' && lineChanged) weight += 4;
 
       const newDist = currentDist + weight;
       const nextKey = makeStateKey(neighbor.to, neighbor.lineId);
-      const existingDist = dist.get(nextKey) ?? Infinity;
-
-      if (newDist < existingDist) {
+      if (newDist < (dist.get(nextKey) ?? Infinity)) {
         dist.set(nextKey, newDist);
         prev.set(nextKey, {
           prevKey: currentKey,
           lineId: neighbor.lineId,
-          isTransfer: neighbor.isTransfer,
-          lineChanged: lineChanged && !neighbor.isTransfer,
-          transferTime,
-          transferSeconds,
-          transferDistanceMeters,
+          isTransfer: false,
+          lineChanged,
+          transferTime: lineChanged ? boardWaitMin : 0,
+          rideTime: neighbor.time,
+          boardWaitMin: lineChanged ? 0 : boardWaitMin,
         });
-        transferCount.set(nextKey, newTransfers);
+        transferCount.set(nextKey, (transferCount.get(currentKey) ?? 0) + (lineChanged ? 1 : 0));
         pq.enqueue(nextKey, newDist);
       }
     }
@@ -1056,6 +1408,8 @@ function reconstructRoute(
       transferTime: prevNode.transferTime,
       transferSeconds: prevNode.transferSeconds,
       transferDistanceMeters: prevNode.transferDistanceMeters,
+      rideTime: prevNode.rideTime,
+      boardWaitMin: prevNode.boardWaitMin,
     });
     current = prevNode.prevKey;
   }
@@ -1071,6 +1425,8 @@ function reconstructRoute(
         isTransfer: false,
         lineChanged: false,
         transferTime: 0,
+        rideTime: 0,
+        boardWaitMin: 0,
       });
     }
   }
@@ -1078,10 +1434,14 @@ function reconstructRoute(
   // 세그먼트 구축
   const segments: RouteSegment[] = [];
   let currentSegmentStations: Station[] = [];
+  let currentSegmentTime = 0;
+  let currentBoardWait = 0;
   let currentLine = '';
   const pushRideSegment = () => {
     if (currentSegmentStations.length <= 1) return;
     const line = lineMap.get(currentLine)!;
+    const rideTime = currentSegmentTime ||
+      (currentSegmentStations.length - 1) * getLineDefaultTime(currentLine);
     segments.push({
       fromStation: currentSegmentStations[0],
       toStation: currentSegmentStations[currentSegmentStations.length - 1],
@@ -1089,9 +1449,11 @@ function reconstructRoute(
       lineName: line?.name || currentLine,
       lineColor: line?.color || '#888',
       stations: [...currentSegmentStations],
-      time: (currentSegmentStations.length - 1) * (getLineDefaultTime(currentLine)),
+      // 탐색에 사용한 실제 엣지 시간 합산 + 탑승 대기 (구간별 소요시간 차이·급행 가변 hop 반영)
+      time: rideTime + currentBoardWait,
       isTransfer: false,
       pattern: chooseOperatingPattern(currentLine, currentSegmentStations),
+      boardWaitSeconds: currentBoardWait > 0 ? Math.round(currentBoardWait * 60) : undefined,
     });
   };
 
@@ -1126,6 +1488,8 @@ function reconstructRoute(
 
       currentLine = node.lineId;
       currentSegmentStations = [station];
+      currentSegmentTime = 0;
+      currentBoardWait = 0;
     } else if (node.lineChanged || node.lineId !== currentLine) {
       pushRideSegment();
 
@@ -1148,7 +1512,8 @@ function reconstructRoute(
         lineName: switchLabel,
         lineColor: switchColor,
         stations: [prevStation, prevStation],
-        time: node.transferTime || TRANSFER_TIME,
+        // 갈아타기 대기(transferTime) 또는 환승 직후 다른 종류 열차 탑승 대기(boardWaitMin)
+        time: node.transferTime || node.boardWaitMin || TRANSFER_TIME,
         isTransfer: true,
         // 같은 노선 일반↔급행은 같은 역에서 열차만 바꿔 타는 것이라 환승 횟수에 넣지 않는다.
         isTrainChange: sameBaseLineSwitch,
@@ -1158,8 +1523,12 @@ function reconstructRoute(
 
       currentLine = node.lineId;
       currentSegmentStations = [prevStation, station];
+      currentSegmentTime = node.rideTime;
+      currentBoardWait = 0;
     } else {
+      if (currentSegmentStations.length === 1) currentBoardWait = node.boardWaitMin;
       currentSegmentStations.push(station);
+      currentSegmentTime += node.rideTime;
     }
   }
 
@@ -1197,6 +1566,8 @@ interface TimedPrev {
   transferSeconds?: number;
   transferDistanceMeters?: number;
   boardWaitMin: number;
+  /** 이 한 스텝의 주행 시간(분). 환승 스텝은 0. 세그먼트 시간 합산용. */
+  rideTime: number;
 }
 
 interface TimedPathNode {
@@ -1210,6 +1581,7 @@ interface TimedPathNode {
   transferSeconds?: number;
   transferDistanceMeters?: number;
   boardWaitMin: number;
+  rideTime: number;
 }
 
 /** 출발/도착(또는 경유)역이 운행계통 스케줄이 있는 노선(현재 4호선)에 속하는지. */
@@ -1238,18 +1610,113 @@ export function findRoutesTimed(
   const fewest = dijkstraTimed(fromStations, toStations, departMin, dayType, "fewest-transfers");
   if (fewest) candidates.push(fewest);
 
+  const leastWalking = dijkstraTimed(fromStations, toStations, departMin, dayType, "least-walking");
+  if (leastWalking) candidates.push(leastWalking);
+
   const sorted = sortRoutesByUsefulness(
     dedupeRoutes(candidates.filter(route => route.segments.length > 0)),
   );
   if (sorted.length === 0) return [];
 
-  // 비-스케줄 노선은 대기 모델링이 없어 우회 경로가 부당하게 빨라 보일 수 있다.
+  // 모드 3개가 같은 경로로 수렴하면(서로 다른 경로가 충분치 않으면) 유망 환승역 경유 대안으로
+  // 후보를 보강한다. 이미 충분히 다양하면 비싼 경유 탐색을 건너뛴다(성능).
+  const distinctCoarse = new Set(sorted.map(getCoarseRouteSignature)).size;
+  const viaAlternatives =
+    distinctCoarse >= 3
+      ? []
+      : findTimedViaAlternatives(fromStations, toStations, departMin, dayType, sorted[0]);
+
+  const merged = dedupeRoutesCoarse(
+    sortRoutesByUsefulness(dedupeRoutes([...sorted, ...viaAlternatives])).filter(
+      isPresentableRoute,
+    ),
+  );
+  if (merged.length === 0) return [];
+
   // 기존 엔진과 동일한 유용성 기준으로 best 대비 도움 안 되는 우회는 버린다.
-  const [best, ...rest] = sorted;
+  const [best, ...rest] = merged;
   return [best, ...rest.filter(route => isUsefulAlternativeRoute(route, best))].slice(
     0,
     MAX_ROUTE_CANDIDATES,
   );
+}
+
+/** timed 경유 대안에서 풀 탐색할 환승역 후보 수 상한. */
+const TIMED_VIA_CANDIDATE_LIMIT = 5;
+
+/** 경로 세그먼트 시간 합 (timed 다리 합성 시 totalTime 보정용). */
+function getSegmentTimeSum(route: Route) {
+  return route.segments.reduce((sum, segment) => sum + segment.time, 0);
+}
+
+/**
+ * 시간인지 탐색의 경유 대안: 유망 환승역을 골라 "출발→경유(시각 t)" + "경유→도착(시각 t')"
+ * 두 timed 다리를 합성한다. 두 번째 다리는 첫 다리 도착 시각 기준으로 탐색해
+ * 막차·배차가 전 구간에 일관되게 반영된다.
+ */
+function findTimedViaAlternatives(
+  fromStations: Station[],
+  toStations: Station[],
+  departMin: number,
+  dayType: DayType,
+  fastestRoute: Route,
+): Route[] {
+  const fromName = fromStations[0]?.name ?? "";
+  const toName = toStations[0]?.name ?? "";
+  if (!fromName || !toName) return [];
+
+  // 시간무관 거리 테이블로 "출발→경유→도착" 하한을 추정해 유망 후보만 추린다.
+  const distFrom = computeMinDistByStation(fromStations);
+  const distTo = computeMinDistByStation(toStations);
+  const maxUsefulTime = fastestRoute.totalTime + MAX_ALTERNATIVE_EXTRA_MINUTES;
+  const candidateNames = getTransferStationCandidateNames(fromName, toName)
+    .map(name => {
+      const estimate = Math.min(
+        ...(stationsByName.get(name) ?? []).map(
+          station =>
+            (distFrom.get(station.id) ?? Infinity) + (distTo.get(station.id) ?? Infinity),
+        ),
+      );
+      return { name, estimate };
+    })
+    .filter(candidate => candidate.estimate <= maxUsefulTime)
+    .sort((a, b) => a.estimate - b.estimate)
+    .slice(0, TIMED_VIA_CANDIDATE_LIMIT)
+    .map(candidate => candidate.name);
+
+  const alternatives: Route[] = [];
+  for (const viaName of candidateNames) {
+    const viaStations = stationsByName.get(viaName);
+    if (!viaStations) continue;
+
+    const firstLeg = dijkstraTimed(fromStations, viaStations, departMin, dayType, "fastest");
+    if (!firstLeg || firstLeg.segments.length === 0) continue;
+
+    const secondLeg = dijkstraTimed(
+      viaStations,
+      toStations,
+      departMin + firstLeg.totalTime,
+      dayType,
+      "fastest",
+    );
+    if (!secondLeg || secondLeg.segments.length === 0) continue;
+
+    const combined = combineRoutesAtVia(firstLeg, secondLeg);
+    // timed 경로의 totalTime은 세그먼트 합이 아니라 도착 시각 기반이므로 직접 보정한다.
+    const bridgeTime =
+      getSegmentTimeSum(combined) - getSegmentTimeSum(firstLeg) - getSegmentTimeSum(secondLeg);
+    combined.totalTime = Math.round(
+      firstLeg.totalTime + Math.max(0, bridgeTime) + secondLeg.totalTime,
+    );
+
+    if (!isUsefulAlternativeRoute(combined, fastestRoute)) continue;
+    if (hasRepeatedRideLine(combined) || hasDegenerateRide(combined)) continue;
+    if (!isDuplicateRoute(alternatives, combined)) {
+      alternatives.push(combined);
+    }
+  }
+
+  return alternatives;
 }
 
 function dijkstraTimed(
@@ -1311,7 +1778,8 @@ function dijkstraTimed(
         let weight = transferTime + getLineChangePenalty(curLine, neighbor.lineId);
         if (mode === "fewest-transfers") weight += 15;
         else if (mode === "least-walking") weight += 8;
-        const nextKey = makeTimedKey(neighbor.to, neighbor.lineId, "");
+        // 환승 후에는 "승강장(탑승 전)" 상태 — 어떤 열차를 타든 탑승 시점에 대기를 1회만 가산
+        const nextKey = makeTimedKey(neighbor.to, "", "");
         relax(nextKey, curDist + weight, curArrive + transferTime, {
           prevKey: currentKey,
           lineId: neighbor.lineId,
@@ -1323,6 +1791,7 @@ function dijkstraTimed(
           transferSeconds: neighbor.transferSeconds,
           transferDistanceMeters: neighbor.transferDistanceMeters,
           boardWaitMin: 0,
+          rideTime: 0,
         });
         continue;
       }
@@ -1353,6 +1822,7 @@ function dijkstraTimed(
             lineChanged: false,
             transferTime: 0,
             boardWaitMin: 0,
+            rideTime: rideMin,
           });
         }
 
@@ -1367,11 +1837,18 @@ function dijkstraTimed(
         for (const opt of options) {
           // 같은 열차 계속 주행은 위(1)에서 이미 처리
           if (opt.patternId === curPat && curLine === neighbor.lineId) continue;
-          const isTrainChange = curPat !== "" && curLine === neighbor.lineId;
+          const sameLineSwitch = curPat !== "" && curLine === neighbor.lineId;
+          // 같은 base 노선의 급행↔일반 전환(예: 경인급행 종착 후 1호선 일반 탑승)도
+          // 도보 환승이 아니라 같은 승강장 열차 갈아타기다.
+          const isTrainChange =
+            sameLineSwitch ||
+            (curLine !== "" &&
+              curLine !== neighbor.lineId &&
+              getBaseLineId(curLine) === getBaseLineId(neighbor.lineId));
           // 같은 노선에서 진행 방향을 반대로 뒤집는 열차 갈아타기는 금지한다.
           // (선형 노선에서 거슬러 갔다 돌아오는 비현실적 우회를 막음)
           if (
-            isTrainChange &&
+            sameLineSwitch &&
             getPatternDirection(neighbor.lineId, opt.patternId) !==
               getPatternDirection(neighbor.lineId, curPat)
           ) {
@@ -1389,32 +1866,32 @@ function dijkstraTimed(
             lineChanged: false,
             transferTime: isTrainChange ? opt.waitMin : 0,
             boardWaitMin: opt.waitMin,
+            rideTime: rideMin,
           });
         }
         continue;
       }
 
-      // 스케줄 없는 노선: 기존 동작과 동일(대기 모델링 없음)
-      const lineChanged = Boolean(curLine && neighbor.lineId !== curLine);
-      const implicit = lineChanged && curStation
-        ? getTransferDetails(curStation.name, curLine, neighbor.lineId)
-        : { time: 0 as number, transferSeconds: undefined as number | undefined, transferDistanceMeters: undefined as number | undefined };
-      const transferTime = lineChanged ? implicit.time : 0;
-      let weight = rideMin + transferTime + (lineChanged ? getLineChangePenalty(curLine, neighbor.lineId) : 0);
-      if (mode === "fewest-transfers" && lineChanged) weight += 15;
-      else if (mode === "least-walking" && lineChanged) weight += 8;
+      // 스케줄 없는 노선: 탑승 시점(출발·환승 후·열차 갈아타기)에 평균 배차/2 대기를 가산
+      const boarding = curLine !== neighbor.lineId;
+      const lineChanged = Boolean(curLine) && boarding; // 같은 역 열차 갈아타기
+      const boardWaitMin = boarding ? getBoardingWaitMinutes(neighbor.lineId) : 0;
+      let weight = rideMin + boardWaitMin +
+        (lineChanged ? getLineChangePenalty(curLine, neighbor.lineId) : 0);
+      if (mode === "fewest-transfers" && lineChanged) weight += 8;
+      else if (mode === "least-walking" && lineChanged) weight += 4;
       const nextKey = makeTimedKey(neighbor.to, neighbor.lineId, "");
-      relax(nextKey, curDist + weight, curArrive + transferTime + rideMin, {
+      relax(nextKey, curDist + weight, curArrive + boardWaitMin + rideMin, {
         prevKey: currentKey,
         lineId: neighbor.lineId,
         patternId: "",
         isTransfer: false,
-        isTrainChange: false,
+        isTrainChange:
+          lineChanged && getBaseLineId(neighbor.lineId) === getBaseLineId(curLine),
         lineChanged,
-        transferTime,
-        transferSeconds: implicit.transferSeconds,
-        transferDistanceMeters: implicit.transferDistanceMeters,
-        boardWaitMin: 0,
+        transferTime: lineChanged ? boardWaitMin : 0,
+        boardWaitMin,
+        rideTime: rideMin,
       });
     }
   }
@@ -1464,6 +1941,7 @@ function reconstructTimedRoute(
       transferSeconds: step.transferSeconds,
       transferDistanceMeters: step.transferDistanceMeters,
       boardWaitMin: step.boardWaitMin,
+      rideTime: step.rideTime,
     });
     current = step.prevKey;
   }
@@ -1482,12 +1960,14 @@ function reconstructTimedRoute(
         lineChanged: false,
         transferTime: 0,
         boardWaitMin: 0,
+        rideTime: 0,
       });
     }
   }
 
   const segments: RouteSegment[] = [];
   let segStations: Station[] = [];
+  let segTime = 0;
   let curLine = "";
   let curPat = "";
   let curBoardWait = 0;
@@ -1502,7 +1982,8 @@ function reconstructTimedRoute(
       lineName: line?.name || curLine,
       lineColor: line?.color || "#888",
       stations: [...segStations],
-      time: (segStations.length - 1) * getLineDefaultTime(curLine),
+      // 탐색에 사용한 실제 주행 시간을 합산 (구간별 소요시간 차이·급행 가변 hop 반영)
+      time: segTime || (segStations.length - 1) * getLineDefaultTime(curLine),
       isTransfer: false,
       pattern: buildTimedPattern(curLine, curPat) ?? chooseOperatingPattern(curLine, segStations),
       boardWaitSeconds: curBoardWait > 0 ? Math.round(curBoardWait * 60) : undefined,
@@ -1539,6 +2020,7 @@ function reconstructTimedRoute(
       curPat = node.patternId;
       curBoardWait = 0;
       segStations = [station];
+      segTime = 0;
     } else if (node.isTrainChange) {
       // 같은 노선에서 다른 행선지 열차로 갈아타기 (같은 역, 승강장 대기)
       pushRide();
@@ -1560,18 +2042,27 @@ function reconstructTimedRoute(
       curPat = node.patternId;
       curBoardWait = 0;
       segStations = [prevStation, station];
+      segTime = node.rideTime;
     } else if (node.lineChanged || node.lineId !== curLine) {
       pushRide();
       const prevStation = segStations[segStations.length - 1] || station;
+      // 같은 base 노선의 일반↔급행 전환(환승 직후 급행 탑승 포함)은 열차 갈아타기로 표시
+      const sameBaseLineSwitch =
+        getBaseLineId(node.lineId) === getBaseLineId(curLine) && node.lineId !== curLine;
       segments.push({
         fromStation: prevStation,
         toStation: prevStation,
         lineId: node.lineId,
-        lineName: "환승",
-        lineColor: "#888",
+        lineName: sameBaseLineSwitch
+          ? isExpressLineId(node.lineId) ? "급행 탑승" : "일반 탑승"
+          : "환승",
+        lineColor: sameBaseLineSwitch
+          ? lineMap.get(node.lineId)?.color || "#888"
+          : "#888",
         stations: [prevStation, prevStation],
-        time: node.transferTime || TRANSFER_TIME,
+        time: node.transferTime || node.boardWaitMin || TRANSFER_TIME,
         isTransfer: true,
+        isTrainChange: sameBaseLineSwitch || undefined,
         transferSeconds: node.transferSeconds,
         transferDistanceMeters: node.transferDistanceMeters,
       });
@@ -1579,10 +2070,12 @@ function reconstructTimedRoute(
       curPat = node.patternId;
       curBoardWait = 0;
       segStations = [prevStation, station];
+      segTime = node.rideTime;
     } else {
       if (segStations.length === 1) curBoardWait = node.boardWaitMin;
       curPat = node.patternId || curPat;
       segStations.push(station);
+      segTime += node.rideTime;
     }
   }
 
@@ -1608,8 +2101,6 @@ function reconstructTimedRoute(
 }
 
 function getLineDefaultTime(lineId: string): number {
-  // 급행/특급/직통은 정차역 간 평균 소요시간을 사용
-  if (lineId in EXPRESS_HOP_MINUTES) return EXPRESS_HOP_MINUTES[lineId];
   const times: Record<string, number> = {
     "1": 2.5, "2": 2, "2-seongsu": 2, "2-sinjeong": 2, "3": 2.5, "4": 2.5, "5": 2.5,
     "6": 2, "7": 2.5, "8": 2.5, "9": 2,
@@ -1618,7 +2109,8 @@ function getLineDefaultTime(lineId: string): number {
     "incheon1": 2.5, "incheon2": 2.5, "gimpo": 2,
     "seohaeline": 3, "sinlim": 2, "gtxa": 5,
   };
-  return times[lineId] || 2.5;
+  // 급행 등 가상 노선은 본 노선 기본값으로 폴백 (실제 시간은 엣지 시간 합산이 우선)
+  return times[lineId] ?? times[getBaseLineId(lineId)] ?? 2.5;
 }
 
 function calculateFare(stationCount: number): number {
@@ -1630,15 +2122,22 @@ function calculateFare(stationCount: number): number {
 /**
  * 요금 산정용 역 간격 수.
  * 요금은 정차역 수가 아니라 이동 거리(역 간격) 기준이므로, 급행처럼 일부 역을 통과해
- * 정차역만 담긴 구간은 stations 길이로 거리를 과소평가한다. 이 경우 실제 통과한
- * 역 간격(노선 내 인덱스 차)으로 환산해 일반열차와 동일한 거리 요금을 적용한다.
+ * 정차역만 담긴 구간은 stations 길이로 거리를 과소평가한다. 이 경우 정차역 사이
+ * 실제 통과 역간격 수(expressHopGaps)로 환산해 일반열차와 동일한 거리 요금을 적용한다.
  */
 function getFareStationCount(segments: RouteSegment[]): number {
   return segments
     .filter(segment => !segment.isTransfer)
     .reduce((sum, segment) => {
       if (isExpressLineId(segment.lineId)) {
-        return sum + Math.abs(segment.toStation.index - segment.fromStation.index);
+        let gaps = 0;
+        for (let i = 0; i < segment.stations.length - 1; i++) {
+          gaps +=
+            expressHopGaps.get(
+              expressHopKey(segment.lineId, segment.stations[i].id, segment.stations[i + 1].id),
+            ) ?? 1;
+        }
+        return sum + gaps;
       }
       return sum + segment.stations.length - 1;
     }, 0);
@@ -1798,5 +2297,11 @@ export function getExpressStopNames(lineId: string, kind: string): Set<string> |
 export function calculateArrivalTime(totalMinutes: number): string {
   const now = new Date();
   now.setMinutes(now.getMinutes() + totalMinutes);
-  return now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: true });
+  // 서버가 UTC 등 다른 타임존에서 실행돼도 한국 시각으로 표시되도록 고정
+  return now.toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Seoul',
+  });
 }

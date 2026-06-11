@@ -86,9 +86,15 @@ type MetroTrainPosition = {
   trainStatus: string;
   destination: string;
   receivedAt: string;
+  receivedAtEpochMs?: number;
+  receivedAtAgeSeconds?: number;
+  isStale?: boolean;
   /** 급행여부 (directAt): 일반/급행/특급 */
   trainType: string;
 };
+
+const TRAIN_POSITION_STALE_AFTER_SECONDS = 180;
+const TRAIN_POSITION_STALE_AFTER_MS = TRAIN_POSITION_STALE_AFTER_SECONDS * 1000;
 
 // 서울교통공사 realtimePosition directAt: 0=일반, 1=급행, 7=특급
 function mapTrainType(directAt: string): string {
@@ -98,6 +104,23 @@ function mapTrainType(directAt: string): string {
 }
 
 function getReceivedAtTime(value: string) {
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/,
+  );
+  if (match) {
+    const [, year, month, day, hour, minute, second] = match;
+    // Seoul Metro recptnDt is KST without a timezone suffix. Parse it as UTC+9
+    // so staleness checks stay correct on UTC production hosts.
+    return Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour) - 9,
+      Number(minute),
+      Number(second),
+    );
+  }
+
   const timestamp = Date.parse(value.replace(" ", "T"));
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
@@ -129,6 +152,24 @@ function dedupeTrainPositions(positions: MetroTrainPosition[]) {
   });
 
   return Array.from(byTrainNo.values()).concat(withoutTrainNo);
+}
+
+function withPositionFreshness(positions: MetroTrainPosition[], now = Date.now()) {
+  return positions.map(position => {
+    const receivedAtEpochMs = getReceivedAtTime(position.receivedAt);
+    const receivedAtAgeSeconds =
+      receivedAtEpochMs > 0 ? Math.max(0, Math.floor((now - receivedAtEpochMs) / 1000)) : undefined;
+
+    return {
+      ...position,
+      receivedAtEpochMs: receivedAtEpochMs || undefined,
+      receivedAtAgeSeconds,
+      isStale:
+        receivedAtAgeSeconds !== undefined
+          ? now - receivedAtEpochMs > TRAIN_POSITION_STALE_AFTER_MS
+          : false,
+    };
+  });
 }
 
 export const metroRouter = router({
@@ -243,18 +284,35 @@ export const metroRouter = router({
           };
         }
 
-        const positions = dedupeTrainPositions(
-          list.map((item: any) => ({
-            trainNo: String(item.trainNo ?? ""),
-            stationName: normalizeRealtimeStationName(String(item.statnNm ?? "")),
-            updnLine: String(item.updnLine ?? ""), // 0=상행/내선, 1=하행/외선
-            trainStatus: String(item.trainSttus ?? ""), // 0=진입, 1=도착, 2=출발
-            destination: normalizeRealtimeStationName(String(item.statnTnm ?? "")),
-            receivedAt: String(item.recptnDt ?? ""),
-            trainType: mapTrainType(String(item.directAt ?? "0")), // 급행여부
-          })),
+        const positions = withPositionFreshness(
+          dedupeTrainPositions(
+            list.map((item: any) => ({
+              trainNo: String(item.trainNo ?? ""),
+              stationName: normalizeRealtimeStationName(String(item.statnNm ?? "")),
+              updnLine: String(item.updnLine ?? ""), // 0=상행/내선, 1=하행/외선
+              trainStatus: String(item.trainSttus ?? ""), // 0=진입, 1=도착, 2=출발
+              destination: normalizeRealtimeStationName(String(item.statnTnm ?? "")),
+              receivedAt: String(item.recptnDt ?? ""),
+              trainType: mapTrainType(String(item.directAt ?? "0")), // 급행여부
+            })),
+          ),
         );
-        return { positions, isSimulated: false };
+        const stalePositionCount = positions.filter(position => position.isStale).length;
+        const freshestPosition = positions.reduce<MetroTrainPosition | null>((freshest, position) => {
+          if (!freshest) return position;
+          return (position.receivedAtEpochMs ?? 0) > (freshest.receivedAtEpochMs ?? 0)
+            ? position
+            : freshest;
+        }, null);
+
+        return {
+          positions,
+          isSimulated: false,
+          stalePositionCount,
+          freshestReceivedAt: freshestPosition?.receivedAt,
+          freshestReceivedAtAgeSeconds: freshestPosition?.receivedAtAgeSeconds,
+          staleAfterSeconds: TRAIN_POSITION_STALE_AFTER_SECONDS,
+        };
       } catch {
         return {
           positions: [],

@@ -10,7 +10,7 @@ export default function NotFoundScreen() {
       <Stack.Screen options={{ title: '페이지 없음' }} />
       <View style={styles.card}>
         <View style={styles.iconCircle}>
-          <Ionicons name="map-outline" size={24} color={colors.green} />
+          <Ionicons name="map-outline" size={24} color={colors.accent} />
         </View>
         <Text style={styles.title}>열 수 없는 링크입니다</Text>
         <Text style={styles.body}>경로 검색 화면으로 돌아가 이동할 역을 다시 선택하세요.</Text>
@@ -42,7 +42,7 @@ const styles = StyleSheet.create({
   },
   iconCircle: {
     alignItems: 'center',
-    backgroundColor: '#E7F0EA',
+    backgroundColor: '#EBF4FF',
     borderRadius: radii.pill,
     height: 48,
     justifyContent: 'center',
