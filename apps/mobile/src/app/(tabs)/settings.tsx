@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { Image } from 'expo-image';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getAllLines, getStationsByLine } from '@shared/metro/pathfinder';
@@ -26,9 +28,22 @@ import { clearRidingRoute } from '@/lib/ridingSession';
 import { FAVORITE_ROUTES_KEY } from '@/lib/routeFavorites';
 import { getUseSimulatedTrainData, setUseSimulatedTrainData } from '@/lib/simulationSettings';
 import { STATION_FAVORITES_KEY } from '@/lib/stationFavorites';
+import { slideUp, stagger } from '@/lib/animations';
 import { cardShadow, colors, radii, spacing, typography } from '@/lib/theme';
 
+const appIcon = require('@/assets/images/icon.png');
+
 const PRIVACY_POLICY_URL = 'https://metronut.vercel.app/privacy.html';
+
+/** iOS 설정 색상 아이콘 칩 틴트(웹 파스텔 배경 대응). */
+const TINT = {
+  blue: '#EBF4FF',
+  orange: '#FFF3EB',
+  green: '#F0FFF4',
+  purple: '#F5F0FF',
+  red: '#FFF0F0',
+  gray: colors.surfaceAlt,
+} as const;
 
 const ALARM_BEFORE_OPTIONS: { value: 1 | 2 | 3; label: string }[] = [
   { value: 1, label: '1정거장 전' },
@@ -45,6 +60,7 @@ const PREFERRED_ROUTE_OPTIONS: { value: PreferredRouteKind; label: string }[] = 
 function SettingSwitchRow({
   icon,
   iconColor,
+  iconTint,
   label,
   hint,
   value,
@@ -52,6 +68,7 @@ function SettingSwitchRow({
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   iconColor: string;
+  iconTint?: string;
   label: string;
   hint?: string;
   value: boolean;
@@ -59,7 +76,7 @@ function SettingSwitchRow({
 }) {
   return (
     <View style={styles.settingRow}>
-      <View style={styles.settingIconWrap}>
+      <View style={[styles.settingIconWrap, { backgroundColor: iconTint ?? colors.surfaceAlt }]}>
         <Ionicons name={icon} size={17} color={iconColor} />
       </View>
       <View style={styles.settingCopy}>
@@ -116,6 +133,8 @@ export default function SettingsTab() {
   const [simulationEnabled, setSimulationEnabled] = useState(false);
   const [preferences, setPreferences] = useState<AppPreferences>(DEFAULT_APP_PREFERENCES);
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermissionStatus>('undetermined');
+  // Phase 9 에서 테마 컨텍스트(use-color-scheme)와 연동. 지금은 행 레이아웃만 구성.
+  const [darkMode, setDarkMode] = useState(false);
 
   const refreshNotificationStatus = useCallback(async () => {
     setNotificationStatus(await getNotificationPermissionStatus());
@@ -187,19 +206,24 @@ export default function SettingsTab() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.headerCard}>
-          <Text style={styles.appName}>메트로넛</Text>
-          <Text style={styles.appDescription}>서울 지하철 경로와 탑승 안내</Text>
-        </View>
+        <Text style={styles.screenTitle}>설정</Text>
 
-        <View style={styles.section}>
+        <Animated.View entering={slideUp(stagger(0))} style={styles.headerCard}>
+          <Image source={appIcon} style={styles.appIcon} contentFit="cover" />
+          <View style={styles.headerCopy}>
+            <Text style={styles.appName}>메트로넛</Text>
+            <Text style={styles.appDescription}>서울 지하철 경로와 탑승 안내</Text>
+          </View>
+        </Animated.View>
+
+        <Animated.View entering={slideUp(stagger(1))} style={styles.section}>
           <Text style={styles.sectionTitle}>알림</Text>
           <View style={styles.sectionCard}>
             <Pressable
               accessibilityRole="button"
               onPress={() => void handleNotificationPermissionPress()}
               style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}>
-              <View style={styles.settingIconWrap}>
+              <View style={[styles.settingIconWrap, { backgroundColor: TINT.blue }]}>
                 <Ionicons name="notifications-outline" size={17} color={colors.accent} />
               </View>
               <View style={styles.settingCopy}>
@@ -216,6 +240,7 @@ export default function SettingsTab() {
             <SettingSwitchRow
               icon="volume-high-outline"
               iconColor={colors.blue}
+              iconTint={TINT.blue}
               label="알림 소리"
               value={preferences.alarmSound}
               onValueChange={(next) => void handlePreferenceChange({ alarmSound: next })}
@@ -224,6 +249,7 @@ export default function SettingsTab() {
             <SettingSwitchRow
               icon="phone-portrait-outline"
               iconColor={colors.orange}
+              iconTint={TINT.orange}
               label="진동"
               value={preferences.alarmVibrate}
               onValueChange={(next) => void handlePreferenceChange({ alarmVibrate: next })}
@@ -231,7 +257,7 @@ export default function SettingsTab() {
             <View style={styles.rowDivider} />
             <View style={styles.settingColumn}>
               <View style={styles.settingColumnHeader}>
-                <View style={styles.settingIconWrap}>
+                <View style={[styles.settingIconWrap, { backgroundColor: TINT.green }]}>
                   <Ionicons name="notifications-outline" size={17} color={colors.green} />
                 </View>
                 <Text style={styles.settingLabel}>하차 알림 시점</Text>
@@ -243,14 +269,14 @@ export default function SettingsTab() {
               />
             </View>
           </View>
-        </View>
+        </Animated.View>
 
-        <View style={styles.section}>
+        <Animated.View entering={slideUp(stagger(2))} style={styles.section}>
           <Text style={styles.sectionTitle}>경로 설정</Text>
           <View style={styles.sectionCard}>
             <View style={styles.settingColumn}>
               <View style={styles.settingColumnHeader}>
-                <View style={styles.settingIconWrap}>
+                <View style={[styles.settingIconWrap, { backgroundColor: TINT.purple }]}>
                   <Ionicons name="git-branch-outline" size={17} color={colors.purple} />
                 </View>
                 <Text style={styles.settingLabel}>선호 경로</Text>
@@ -262,25 +288,69 @@ export default function SettingsTab() {
               />
             </View>
           </View>
-        </View>
+        </Animated.View>
 
-        <View style={styles.section}>
+        <Animated.View entering={slideUp(stagger(3))} style={styles.section}>
           <Text style={styles.sectionTitle}>데이터 소스</Text>
           <View style={styles.sectionCard}>
             <SettingSwitchRow
               icon="train-outline"
               iconColor={colors.blue}
+              iconTint={TINT.blue}
               label="시뮬레이션 열차 데이터"
               hint="켜면 실시간 API 대신 앱 안의 예시 도착 정보를 표시합니다."
               value={simulationEnabled}
               onValueChange={(next) => void handleSimulationChange(next)}
             />
           </View>
-        </View>
+        </Animated.View>
 
-        <View style={styles.section}>
+        <Animated.View entering={slideUp(stagger(4))} style={styles.section}>
+          <Text style={styles.sectionTitle}>일반</Text>
+          <View style={styles.sectionCard}>
+            <SettingSwitchRow
+              icon="moon"
+              iconColor={colors.surface}
+              iconTint={colors.primary}
+              label="다크 모드"
+              hint={darkMode ? '다크 테마 사용 중' : '라이트 테마 사용 중'}
+              value={darkMode}
+              onValueChange={setDarkMode}
+            />
+            <View style={styles.rowDivider} />
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => Alert.alert('준비 중', '언어 설정 기능이 곧 제공됩니다.')}
+              style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}>
+              <View style={[styles.settingIconWrap, { backgroundColor: TINT.blue }]}>
+                <Ionicons name="globe-outline" size={17} color={colors.blue} />
+              </View>
+              <View style={styles.settingCopy}>
+                <Text style={styles.settingLabel}>언어</Text>
+                <Text style={styles.settingHint}>한국어</Text>
+              </View>
+              <Text style={styles.soonBadge}>준비중</Text>
+            </Pressable>
+          </View>
+        </Animated.View>
+
+        <Animated.View entering={slideUp(stagger(5))} style={styles.section}>
           <Text style={styles.sectionTitle}>데이터 관리</Text>
           <View style={styles.sectionCard}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => Alert.alert('준비 중', '오프라인 데이터 기능이 곧 제공됩니다.')}
+              style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}>
+              <View style={[styles.settingIconWrap, { backgroundColor: TINT.green }]}>
+                <Ionicons name="cloud-download-outline" size={17} color={colors.green} />
+              </View>
+              <View style={styles.settingCopy}>
+                <Text style={styles.settingLabel}>오프라인 데이터</Text>
+                <Text style={styles.settingHint}>노선 데이터 다운로드</Text>
+              </View>
+              <Text style={styles.soonBadge}>준비중</Text>
+            </Pressable>
+            <View style={styles.rowDivider} />
             <Pressable
               accessibilityRole="button"
               onPress={handleClearSavedData}
@@ -295,9 +365,9 @@ export default function SettingsTab() {
               <Ionicons name="chevron-forward" size={17} color={colors.muted} />
             </Pressable>
           </View>
-        </View>
+        </Animated.View>
 
-        <View style={styles.section}>
+        <Animated.View entering={slideUp(stagger(6))} style={styles.section}>
           <Text style={styles.sectionTitle}>정보</Text>
           <View style={styles.sectionCard}>
             <View style={styles.settingRow}>
@@ -329,7 +399,7 @@ export default function SettingsTab() {
               <Ionicons name="open-outline" size={16} color={colors.muted} />
             </Pressable>
           </View>
-        </View>
+        </Animated.View>
 
         {__DEV__ ? (
           <View style={styles.section}>
@@ -360,18 +430,36 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingBottom: 120,
   },
+  screenTitle: {
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
   headerCard: {
+    alignItems: 'center',
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: radii.md,
     borderWidth: 1,
-    gap: spacing.xs,
-    padding: spacing.lg,
+    flexDirection: 'row',
+    gap: spacing.md,
+    padding: spacing.md,
     ...cardShadow,
   },
+  appIcon: {
+    borderRadius: 16,
+    height: 64,
+    width: 64,
+  },
+  headerCopy: {
+    flex: 1,
+    gap: 2,
+  },
   appName: {
-    ...typography.title,
     color: colors.text,
+    fontSize: 17,
+    fontWeight: '800',
   },
   appDescription: {
     ...typography.body,
@@ -471,6 +559,16 @@ const styles = StyleSheet.create({
   },
   segmentedTextActive: {
     color: colors.surface,
+  },
+  soonBadge: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radii.sm - 4,
+    color: colors.subtleText,
+    fontSize: 10,
+    fontWeight: '800',
+    overflow: 'hidden',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
   },
   pressed: {
     opacity: 0.72,
