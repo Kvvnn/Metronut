@@ -48,8 +48,8 @@ cd apps/mobile && npx tsc --noEmit && npx expo lint && npx expo-doctor
 ## Phase 4 — 경로 결과 + 경로 상세 ✅
 - [x] `RouteResult`: 카드 레이아웃 정밀 일치(라벨+아이콘/소요시간/노선 인디케이터+연결대시/패턴 점/환승·역수·환승이동 아이콘 + 긴환승 pill + 요금 우측), 스태거 등장(`slideUp`), 카드 무중력 부유(`FloatingView` = `space-float`)
 - [x] `RouteDetail`: 구간 타임라인 정밀 일치(기존), 즐겨찾기 별(기존)
-- [x] '탑승 안내 시작' 버튼을 딥스페이스 그라데이션으로(`ridingButton` `experimental_backgroundImage` 160° 네이비) — 별 흐름 `Starfield` 는 Phase 8 에서 이식
-**완료 기준:** 두 화면이 웹과 동일(Starfield 제외). tsc/lint 통과.
+- [x] '탑승 안내 시작' 버튼을 딥스페이스 그라데이션 + **별 흐름 `Starfield`** + `PressableScale`(btn-press) 로 (Phase 8 에서 Starfield 이식 완료)
+**완료 기준:** 두 화면이 웹과 동일. tsc/lint 통과.
 
 ## Phase 5 — 역 정보(StationInfo) ✅
 - [x] 실시간 도착 레이아웃, 첫차·막차 카드, 환승 정보, 빠른 환승 안내 (기존)
@@ -68,14 +68,15 @@ cd apps/mobile && npx tsc --noEmit && npx expo lint && npx expo-doctor
 - [x] 상단 **sticky 미니 네비**(스크롤해도 여정/구간 고정), 진행 레일 + **열차 마커**(레일 위 열차 아이콘 핀), 구간 진행률
 **7b 열차 선택 드로어 + 환승**
 - [x] 미리선택 패널(`preTransferCard` — 환승 전 다음 노선 열차 미리 선택), 환승 안내(active/transfer 카드 + `TransferNotice`) — 기존 구현
-- [ ] 하단 **드래그 열차 선택 드로어**(Phase 1 시트로 전환) — **보류**: 현재 인라인 '열차 후보' 리스트가 기능 동일. 드로어 전환 + 별 흐름(`Starfield`/`VoyageTrack`)은 온디바이스 튜닝 필요 → **Phase 8**과 함께 처리
-**완료 기준:** 탑승 안내가 웹과 동일(상호작용 포함). → 7a 충족, 7b 기능 충족(드로어 비주얼만 Phase 8). tsc/lint 통과.
+- [x] 우주 항해 비주얼: ride 구간에 딥스페이스 `voyageCard`(`Starfield` + `VoyageTrack` 캡슐/행성/궤도) 추가 (Phase 8 이식)
+- [ ] 하단 **드래그 열차 선택 드로어**(Phase 1 시트로 전환) — **보류**: 현재 인라인 '열차 후보' 리스트가 기능 동일. 드로어 전환은 스크롤 레이아웃 재구성이라 온디바이스 검증 후 진행 권장(유일한 잔여 항목)
+**완료 기준:** 탑승 안내가 웹과 동일(상호작용 포함). → 7a + 우주 비주얼 충족, 인라인 열차 리스트로 기능 충족. tsc/lint 통과.
 
-## Phase 8 — 우주 테마 연출 & 마이크로 인터랙션
-- [ ] `Starfield`, `VoyageTrack`을 `react-native-svg`(또는 Skia)로 이식
-- [ ] `space-card` 그라데이션, `space-float` 무중력 애니메이션
-- [ ] 전역 `btn-press` scale 적용, prefers-reduced-motion 대응
-**완료 기준:** 웹의 우주 연출이 모바일에도 동일하게 표현.
+## Phase 8 — 우주 테마 연출 & 마이크로 인터랙션 ✅
+- [x] `Starfield`(reanimated translate-loop), `VoyageTrack`(View+reanimated 캡슐/행성/궤도) 이식 — **react-native-svg 네이티브 의존 없이** 동일 비주얼(`components/space/`). 적용: 탑승 버튼 + 탑승 안내 voyageCard
+- [x] `space-card` 그라데이션(`voyageCard`/`ridingButton` `experimental_backgroundImage`), `space-float` 무중력(`FloatingView` — route-result 카드)
+- [x] `btn-press` scale(`PressableScale`) 핵심 CTA 적용, **prefers-reduced-motion 대응**(`useReducedMotion` → Starfield/VoyageTrack/FloatingView 정지)
+**완료 기준:** 웹의 우주 연출이 모바일에도 동일하게 표현. → tsc/lint 통과.
 
 ## Phase 9 — 다크 모드
 - [ ] 웹 `.dark` 토큰을 모바일 테마에 추가(라이트/다크 팔레트)

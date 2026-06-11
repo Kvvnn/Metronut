@@ -18,6 +18,7 @@ import {
   orientRideStations,
 } from '@shared/metro/ridingTrains';
 
+import { Starfield, VoyageTrack } from '@/components/space';
 import { getAppPreferences } from '@/lib/appPreferences';
 import { ensureNotificationPermission, sendRidingAlert } from '@/lib/notifications';
 import { getTrainPositions, type TrainPosition } from '@/lib/realtimeApi';
@@ -694,6 +695,20 @@ export default function RidingScreen() {
         </View>
       )}
 
+      {currentSegment?.type === 'ride' && currentRideSegment ? (
+        <View style={styles.voyageCard}>
+          <Starfield speed={remainingStations > 0 ? 0.5 : 0.12} density={0.2} />
+          <VoyageTrack
+            progress={progress}
+            stationCount={currentRideSegment.stationNames.length}
+            currentIndex={safeStationIndex}
+            remaining={remainingStations}
+            lineColor={line?.color ?? colors.accent}
+            moving={remainingStations > 0}
+          />
+        </View>
+      ) : null}
+
       <View style={styles.alertCard}>
         <View style={styles.alertHeader}>
           <View style={styles.alertTitleRow}>
@@ -946,6 +961,20 @@ const styles = StyleSheet.create({
   cardBody: {
     ...typography.body,
     color: colors.subtleText,
+  },
+  voyageCard: {
+    borderRadius: radii.lg,
+    experimental_backgroundImage:
+      'linear-gradient(160deg, #0b1026 0%, #141b3d 55%, #0e132e 100%)',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    shadowColor: '#0D1238',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 8,
   },
   railWrap: {
     height: 20,

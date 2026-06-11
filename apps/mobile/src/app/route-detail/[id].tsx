@@ -23,6 +23,8 @@ import {
   type FastTransferLookupInput,
 } from '@shared/fastTransfer';
 
+import { Starfield } from '@/components/space';
+import { PressableScale } from '@/components/ui';
 import { impactHaptic, selectionHaptic, successHaptic } from '@/lib/haptics';
 import { isFavoriteRoute, toggleFavoriteRoute } from '@/lib/routeFavorites';
 import { saveRidingRoute, type RidingRoutePayload } from '@/lib/ridingSession';
@@ -407,10 +409,11 @@ export default function RouteDetailScreen() {
         ),
       )}
 
-      <Pressable style={({ pressed }) => [styles.ridingButton, pressed && styles.pressed]} onPress={handleStartRiding}>
+      <PressableScale style={styles.ridingButton} haptic onPress={handleStartRiding}>
+        <Starfield speed={0.5} density={0.22} />
         <Ionicons name="play" size={17} color={colors.surface} />
         <Text style={styles.ridingButtonText}>탑승 안내 시작</Text>
-      </Pressable>
+      </PressableScale>
     </ScrollView>
   );
 }
