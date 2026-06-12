@@ -215,6 +215,12 @@ export function MetroOfficialMap({
     scale: DEFAULT_SCALE,
     pinchDistance: 0,
   });
+  // 제스처 핸들러가 매 프레임 setState로 인해 재생성되지 않도록 최신 transform/viewport를
+  // ref로 읽는다. (이전엔 deps에 transform이 있어 팬 도중 PanResponder가 매 프레임 재생성됨)
+  const transformRef = useRef(transform);
+  transformRef.current = transform;
+  const viewportRef = useRef(viewport);
+  viewportRef.current = viewport;
 
   const mapStations = useMemo(() => getUniqueMapStations(selectedLineId), [selectedLineId]);
 
@@ -222,22 +228,26 @@ export function MetroOfficialMap({
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
+        // 작은 움직임은 마커 탭으로 흘려보내고, 일정 거리 이상 끌 때만 팬으로 처리.
+        onMoveShouldSetPanResponder: (_event, gestureState) =>
+          Math.abs(gestureState.dx) > 4 || Math.abs(gestureState.dy) > 4,
         onPanResponderGrant: (event) => {
+          const current = transformRef.current;
           gestureRef.current = {
-            x: transform.x,
-            y: transform.y,
-            scale: transform.scale,
+            x: current.x,
+            y: current.y,
+            scale: current.scale,
             pinchDistance: distanceBetweenTouches(event.nativeEvent.touches),
           };
         },
         onPanResponderMove: (event, gestureState) => {
+          const vp = viewportRef.current;
           const touches = event.nativeEvent.touches;
           if (touches.length >= 2) {
             const nextDistance = distanceBetweenTouches(touches);
             const baseDistance = gestureRef.current.pinchDistance || nextDistance || 1;
             const nextScale = clamp(gestureRef.current.scale * (nextDistance / baseDistance), MIN_SCALE, MAX_SCALE);
-            setTransform((current) => clampTransform({ ...current, scale: nextScale }, viewport));
+            setTransform((current) => clampTransform({ ...current, scale: nextScale }, vp));
             return;
           }
 
@@ -248,12 +258,12 @@ export function MetroOfficialMap({
                 x: gestureRef.current.x + gestureState.dx,
                 y: gestureRef.current.y + gestureState.dy,
               },
-              viewport,
+              vp,
             ),
           );
         },
       }),
-    [transform, viewport],
+    [],
   );
 
   const handleLayout = (event: LayoutChangeEvent) => {
@@ -339,6 +349,45 @@ export function MetroOfficialMap({
     return { left, top, width: POP_W };
   }, [selectedStation, transform, viewport]);
 
+  // 마커는 scale·선택 상태에만 의존하도록 메모이즈한다. 팬(translate)으로 transform.x/y만
+  // 바뀔 때 수백 개 마커를 매 프레임 다시 만들지 않아 팬이 부드러워진다.
+  const markerNodes = useMemo(
+    () =>
+      mapStations.map((station) => {
+        const line = getLineInfo(station.lineId);
+        const isSelected = selectedStation?.name === station.name;
+        const role: StationRole | null =
+          from === station.name ? 'from' : via === station.name ? 'via' : to === station.name ? 'to' : null;
+        const markerColor = role ? roleMeta[role].color : line?.color ?? palette.green;
+        const markerSize = isSelected ? 30 : role ? 26 : 18;
+
+        return (
+          <Pressable
+            key={station.id}
+            accessibilityLabel={`${station.name}역 선택`}
+            onPress={() => {
+              impactHaptic();
+              setSelectedStation(station);
+            }}
+            style={[
+              styles.stationMarker,
+              {
+                backgroundColor: markerColor,
+                height: markerSize,
+                left: station.x * transform.scale - markerSize / 2,
+                top: station.y * transform.scale - markerSize / 2,
+                width: markerSize,
+              },
+              isSelected && styles.stationMarkerSelected,
+            ]}
+          >
+            {role ? <Text style={styles.stationRoleText}>{roleMeta[role].label[0]}</Text> : null}
+          </Pressable>
+        );
+      }),
+    [mapStations, transform.scale, from, via, to, selectedStation, palette, styles],
+  );
+
   return (
     <View style={[styles.container, fillHeight && styles.containerFill]}>
       {hideChrome ? null : (
@@ -408,38 +457,7 @@ export function MetroOfficialMap({
             ]}
           >
             <Image source={mapImage} style={{ width: contentWidth, height: contentHeight }} resizeMode="stretch" />
-            {mapStations.map((station) => {
-              const line = getLineInfo(station.lineId);
-              const isSelected = selectedStation?.name === station.name;
-              const role: StationRole | null =
-                from === station.name ? 'from' : via === station.name ? 'via' : to === station.name ? 'to' : null;
-              const markerColor = role ? roleMeta[role].color : line?.color ?? palette.green;
-              const markerSize = isSelected ? 30 : role ? 26 : 18;
-
-              return (
-                <Pressable
-                  key={station.id}
-                  accessibilityLabel={`${station.name}역 선택`}
-                  onPress={() => {
-                    impactHaptic();
-                    setSelectedStation(station);
-                  }}
-                  style={[
-                    styles.stationMarker,
-                    {
-                      backgroundColor: markerColor,
-                      height: markerSize,
-                      left: station.x * transform.scale - markerSize / 2,
-                      top: station.y * transform.scale - markerSize / 2,
-                      width: markerSize,
-                    },
-                    isSelected && styles.stationMarkerSelected,
-                  ]}
-                >
-                  {role ? <Text style={styles.stationRoleText}>{roleMeta[role].label[0]}</Text> : null}
-                </Pressable>
-              );
-            })}
+            {markerNodes}
           </View>
         </View>
 
@@ -672,7 +690,8 @@ const makeStyles = (palette: Palette) =>
     gap: spacing.xs,
     position: 'absolute',
     right: spacing.sm,
-    top: spacing.sm,
+    // 홈 검색 카드(상단)·하단 시트에 가리지 않도록 우측 중앙에 배치.
+    top: '40%',
   },
   mapControlButton: {
     alignItems: 'center',

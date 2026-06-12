@@ -19,6 +19,7 @@ import {
   orientRideStations,
 } from '@shared/metro/ridingTrains';
 
+import { useTabBarHeight } from '@/components/AppTabBar';
 import { Starfield, VoyageTrack } from '@/components/space';
 import { BottomSheet } from '@/components/ui';
 import { getAppPreferences } from '@/lib/appPreferences';
@@ -34,7 +35,7 @@ import {
   type RidingRouteSegment,
   type RidingTransferSegment,
 } from '@/lib/ridingSession';
-import { cardShadow, radii, spacing, typography, type Palette } from '@/lib/theme';
+import { cardShadow, radii, spacing, type Palette } from '@/lib/theme';
 import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 interface TrainCandidate extends TrainPosition {
@@ -43,9 +44,16 @@ interface TrainCandidate extends TrainPosition {
 }
 
 const TRAIN_POSITION_POLL_MS = 15000;
-/** 열차 선택 드로어: 펼친/접힌 노출 높이(safe-area 제외). */
-const DRAWER_EXPANDED_HEIGHT = 384;
-const DRAWER_COLLAPSED_HEIGHT = 76;
+/** 열차 선택 드로어: 펼친/접힌 노출 높이(safe-area 제외). 웹처럼 콘텐츠에 맞춰 낮게. */
+const DRAWER_EXPANDED_HEIGHT = 256;
+const DRAWER_COLLAPSED_HEIGHT = 64;
+/** 가로 역 레일(웹식 열차 선택) 한 역 칸 너비 / 좌우 패딩. */
+const RAIL_STATION_WIDTH = 84;
+const RAIL_PADDING = 16;
+/** 열차 레인(46) + 점 래퍼 절반(10) = 점 중앙. 라인을 위에서부터 잡아 플랫폼 무관하게 점을 통과. */
+const RAIL_TRAIN_LANE_HEIGHT = 46;
+const RAIL_DOT_WRAP_HEIGHT = 20;
+const RAIL_LINE_TOP = RAIL_TRAIN_LANE_HEIGHT + RAIL_DOT_WRAP_HEIGHT / 2 - 1.5;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -76,17 +84,6 @@ function getRideNumber(route: RidingRoutePayload | null, segmentIndex: number) {
 function stationProgress(segment: RidingRideSegment | null, currentStationIndex: number) {
   if (!segment || segment.stationNames.length <= 1) return 1;
   return clamp(currentStationIndex, 0, segment.stationNames.length - 1) / (segment.stationNames.length - 1);
-}
-
-function trainStatusLabel(status: string) {
-  if (status === '0') return '진입';
-  if (status === '1') return '도착';
-  if (status === '2') return '출발';
-  return '이동 중';
-}
-
-function trainTypeLabel(candidate: TrainCandidate) {
-  return candidate.trainType && candidate.trainType !== '일반' ? candidate.trainType : trainStatusLabel(candidate.trainStatus);
 }
 
 function createSimulatedCandidates(segment: RidingRideSegment): TrainCandidate[] {
@@ -187,43 +184,6 @@ function TransferNotice({ transfer }: { transfer: RidingTransferSegment }) {
   );
 }
 
-function TrainCandidateRow({
-  candidate,
-  selected,
-  onPress,
-}: {
-  candidate: TrainCandidate;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  const { palette } = useTheme();
-  const styles = useThemedStyles(makeStyles);
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.trainRow,
-        selected && styles.trainRowSelected,
-        pressed && styles.pressed,
-      ]}
-    >
-      <View style={styles.trainNoBadge}>
-        <Ionicons name="train-outline" size={15} color={selected ? palette.surface : palette.accent} />
-      </View>
-      <View style={styles.trainCopy}>
-        <Text style={styles.trainTitle}>
-          {candidate.trainNo} · {trainTypeLabel(candidate)}
-        </Text>
-        <Text style={styles.trainMeta} numberOfLines={1}>
-          {candidate.stationName || '위치 확인 중'} → {candidate.destination || '종착 정보 없음'}
-        </Text>
-      </View>
-      {candidate.isSimulatedCandidate ? <Text style={styles.simBadge}>SIM</Text> : null}
-      {selected ? <Ionicons name="checkmark-circle" size={20} color={palette.accent} /> : null}
-    </Pressable>
-  );
-}
-
 export default function RidingScreen() {
   const { palette } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -234,6 +194,7 @@ export default function RidingScreen() {
   const [alarmEnabled, setAlarmEnabled] = useState(true);
   const [drawerExpanded, setDrawerExpanded] = useState(true);
   const insets = useSafeAreaInsets();
+  const tabBarHeight = useTabBarHeight();
   const [alarmBefore, setAlarmBefore] = useState(1);
   const [trainCandidates, setTrainCandidates] = useState<TrainCandidate[]>([]);
   const [loadingTrains, setLoadingTrains] = useState(false);
@@ -298,6 +259,17 @@ export default function RidingScreen() {
       .find((segment): segment is RidingTransferSegment => segment.type === 'transfer') ?? null;
   }, [currentSegment, currentSegmentIndex, route]);
   const rideCount = getRideNumber(route, currentSegmentIndex);
+  // 전체 탑승 구간 목록과 현재 구간 인덱스(웹식 세그먼트 진행 바용).
+  const rideSegments = useMemo(
+    () =>
+      route
+        ? route.segments
+            .map((segment, idx) => ({ segment, idx }))
+            .filter((entry): entry is { segment: RidingRideSegment; idx: number } => entry.segment.type === 'ride')
+        : [],
+    [route],
+  );
+  const currentRideIdx = rideSegments.findIndex((entry) => entry.segment === currentRideSegment);
   const line = currentRideSegment ? getLineInfo(currentRideSegment.lineId) : null;
   const maxStationIndex = currentRideSegment ? Math.max(0, currentRideSegment.stationNames.length - 1) : 0;
   const safeStationIndex = clamp(currentStationIndex, 0, maxStationIndex);
@@ -305,7 +277,67 @@ export default function RidingScreen() {
   const remainingStations = Math.max(0, maxStationIndex - safeStationIndex);
   const progress = stationProgress(currentRideSegment, safeStationIndex);
   const selectedTrain = trainCandidates.find((candidate) => candidate.trainNo === selectedTrainNo) ?? null;
+  // 가로 역 레일(웹식 열차 선택)용: 정렬된 전체 노선 + 후보 열차를 역 인덱스에 매핑.
+  const oriented = useMemo(
+    () =>
+      currentRideSegment
+        ? orientRideStations(
+            currentRideSegment.lineId,
+            currentRideSegment.fromStationName,
+            currentRideSegment.toStationName,
+            currentRideSegment.stationNames,
+          )
+        : null,
+    [currentRideSegment],
+  );
+  const routeStationSet = useMemo(
+    () => new Set(currentRideSegment?.stationNames ?? []),
+    [currentRideSegment],
+  );
+  const candidatesByOrientedIdx = useMemo(() => {
+    const indexByName = new Map<string, number>();
+    oriented?.stations.forEach((station, idx) => indexByName.set(station.name, idx));
+    const map = new Map<number, TrainCandidate[]>();
+    trainCandidates.forEach((candidate) => {
+      const idx = indexByName.get(candidate.stationName);
+      if (idx === undefined) return;
+      const list = map.get(idx) ?? [];
+      list.push(candidate);
+      map.set(idx, list);
+    });
+    return map;
+  }, [oriented, trainCandidates]);
+  const railRef = useRef<ScrollView>(null);
+  // 구간별로 한 번만 승차역으로 자동 스크롤(레일 콘텐츠가 측정된 뒤 실행해야 정확하다).
+  const railScrolledKeyRef = useRef<string | null>(null);
+  const railSegmentKey = currentRideSegment
+    ? `${currentRideSegment.lineId}:${currentRideSegment.fromStationName}:${currentRideSegment.toStationName}`
+    : '';
+  const scrollRailToBoarding = useCallback(() => {
+    if (!oriented || oriented.fromIdx < 0) return;
+    if (railScrolledKeyRef.current === railSegmentKey) return;
+    railScrolledKeyRef.current = railSegmentKey;
+    const x = Math.max(0, oriented.fromIdx * RAIL_STATION_WIDTH - 80);
+    railRef.current?.scrollTo({ x, animated: false });
+  }, [oriented, railSegmentKey]);
   const isFinalArrival = Boolean(route && currentSegmentIndex >= route.segments.length - 1 && remainingStations === 0);
+  // 선택한 열차가 아직 승차역에 못 온 "승차 대기" 상태 — 도달 정거장 수·ETA(웹 대응, 역간 2분 가정).
+  const selectedTrainOrientedIdx =
+    selectedTrain && oriented ? oriented.stations.findIndex((station) => station.name === selectedTrain.stationName) : -1;
+  const isWaitingForBoard = Boolean(
+    selectedTrain &&
+      oriented &&
+      oriented.fromIdx >= 0 &&
+      selectedTrainOrientedIdx >= 0 &&
+      selectedTrainOrientedIdx < oriented.fromIdx &&
+      safeStationIndex === 0,
+  );
+  const stationsUntilBoard = isWaitingForBoard && oriented ? oriented.fromIdx - selectedTrainOrientedIdx : 0;
+  const boardEtaMinutes = !isWaitingForBoard
+    ? 0
+    : selectedTrain?.trainStatus === '2'
+      ? Math.max(1, stationsUntilBoard * 2 - 1)
+      : stationsUntilBoard * 2;
   // 폴링(lastUpdated)마다 리렌더되므로 매 렌더 계산으로 충분하다.
   const isPastLastTrainForRide = currentRideSegment
     ? isPastLastTrain(
@@ -526,6 +558,16 @@ export default function RidingScreen() {
     setCurrentStationIndex(selectedTrain.routeStationIndex);
   }, [selectedTrain]);
 
+  // 탑승 구간 도착 시 자동으로 다음 구간(환승/다음 탑승)으로 진행한다.
+  // 웹과 동일하게 선택한 열차 위치로만 진행하며, 수동 이전/다음 조작은 없다.
+  useEffect(() => {
+    if (!route || currentSegment?.type !== 'ride' || !selectedTrainNo) return;
+    if (remainingStations > 0 || currentSegmentIndex >= route.segments.length - 1) return;
+    const timer = setTimeout(() => goToSegment(currentSegmentIndex + 1), 800);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, currentSegment, selectedTrainNo, remainingStations, currentSegmentIndex]);
+
   useEffect(() => {
     if (!isSimulated || !selectedTrainNo || !currentRideSegment) return;
 
@@ -572,42 +614,11 @@ export default function RidingScreen() {
     pendingNextTrainNoRef.current = next;
   };
 
-  const handleNext = () => {
-    if (!route || !currentSegment) return;
-
+  // 환승 구간에서 "환승 완료"를 눌러 다음 탑승 구간으로 진행한다.
+  const handleTransferComplete = () => {
+    if (!route) return;
     selectionHaptic();
-    if (currentSegment.type === 'transfer') {
-      goToSegment(currentSegmentIndex + 1);
-      return;
-    }
-
-    if (safeStationIndex < maxStationIndex) {
-      setCurrentStationIndex(safeStationIndex + 1);
-      return;
-    }
-
-    if (currentSegmentIndex < route.segments.length - 1) {
-      goToSegment(currentSegmentIndex + 1);
-    }
-  };
-
-  const handlePrevious = () => {
-    if (!route || !currentSegment) return;
-
-    selectionHaptic();
-    if (currentSegment.type === 'transfer') {
-      goToSegment(currentSegmentIndex - 1);
-      return;
-    }
-
-    if (safeStationIndex > 0) {
-      setCurrentStationIndex(safeStationIndex - 1);
-      return;
-    }
-
-    if (currentSegmentIndex > 0) {
-      goToSegment(currentSegmentIndex - 1);
-    }
+    goToSegment(currentSegmentIndex + 1);
   };
 
   const handleSelectTrain = (candidate: TrainCandidate) => {
@@ -622,14 +633,26 @@ export default function RidingScreen() {
 
   if (!route) {
     return (
-      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + 24 }]}>
         <Stack.Screen options={{ title: '탑승 안내' }} />
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>진행 중인 탑승 안내가 없습니다</Text>
-          <Text style={styles.emptyBody}>경로 상세 화면에서 탑승 안내를 시작하세요.</Text>
+        {/* 출발 대기 우주 정거장 — 여정이 없을 때의 딥스페이스 연출 */}
+        <View style={styles.launchCard}>
+          <Starfield speed={0.35} density={0.3} shootingStars />
+          <View style={styles.launchOrbit}>
+            <View style={styles.launchPlanet}>
+              <Ionicons name="planet-outline" size={30} color="#DDE6FF" />
+            </View>
+          </View>
+          <Text style={styles.launchTitle}>대기 중인 여정이 없습니다</Text>
+          <Text style={styles.launchBody}>
+            경로를 골라 탑승 안내를 시작하면{'\n'}우주를 가로지르는 항해가 시작됩니다.
+          </Text>
           <Link href="/" asChild>
-            <Pressable style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
-              <Text style={styles.primaryButtonText}>경로 검색으로 이동</Text>
+            <Pressable style={({ pressed }) => pressed && styles.pressed}>
+              <View style={styles.launchButton}>
+                <Ionicons name="search" size={16} color="#0B1026" />
+                <Text style={styles.launchButtonText}>경로 검색으로 이동</Text>
+              </View>
             </Pressable>
           </Link>
         </View>
@@ -658,74 +681,121 @@ export default function RidingScreen() {
         style={styles.scrollBody}
         contentContainerStyle={[
           styles.content,
-          currentSegment?.type === 'ride' && { paddingBottom: insets.bottom + DRAWER_COLLAPSED_HEIGHT + 24 },
+          { paddingBottom: tabBarHeight + 24 + (currentSegment?.type === 'ride' ? DRAWER_COLLAPSED_HEIGHT : 0) },
         ]}
         refreshControl={<RefreshControl refreshing={loadingTrains} onRefresh={() => void refreshTrainPositions()} tintColor={palette.accent} />}
       >
 
       {currentSegment?.type === 'transfer' ? (
-        <View style={styles.activeCard}>
-          <Text style={styles.cardKicker}>환승 중</Text>
-          <Text style={styles.currentStation}>{currentSegment.stationName}</Text>
-          <Text style={styles.cardBody}>
-            {currentSegment.toLineName} {currentSegment.toDirection}으로 이동하세요.
-          </Text>
-          <TransferNotice transfer={currentSegment} />
-          <Pressable style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]} onPress={handleNext}>
-            <Text style={styles.primaryButtonText}>환승 완료</Text>
-          </Pressable>
+        /* 환승 — ride 카드와 일관된 딥스페이스 "도킹" 연출 */
+        <View style={styles.spaceCard}>
+          <Starfield speed={0.3} density={0.22} shootingStars />
+          <View style={styles.spaceInner}>
+            <View style={styles.spaceTopRow}>
+              <View style={styles.spaceLineRow}>
+                <View style={styles.transferWalkBadge}>
+                  <Ionicons name="walk" size={14} color="#FFD9A8" />
+                </View>
+                <Text style={styles.spaceDirection} numberOfLines={1}>
+                  환승 · 다음 노선으로
+                </Text>
+              </View>
+              <LineBadge lineId={currentSegment.toLineId} />
+            </View>
+
+            <Text style={styles.spaceKicker}>환승역</Text>
+            <Text
+              style={[styles.spaceStation, { textShadowColor: getLineInfo(currentSegment.toLineId)?.color ?? palette.accent }]}
+              numberOfLines={1}>
+              {currentSegment.stationName}
+            </Text>
+            <Text style={styles.spaceSub} numberOfLines={1}>
+              {currentSegment.toLineName} {currentSegment.toDirection}으로 갈아타세요
+            </Text>
+
+            <View style={styles.transferPanel}>
+              <Text style={styles.transferPanelLine}>
+                도보 약 {currentSegment.walkMinutes}분
+                {currentSegment.walkDistanceMeters ? ` · ${currentSegment.walkDistanceMeters}m` : ''}
+              </Text>
+              <View style={styles.transferFastRow}>
+                <Ionicons name="flash" size={13} color="#FFD9A8" />
+                <Text style={styles.transferFastText}>
+                  빠른 환승 {currentSegment.fastTransfer ? formatFastTransferInfo(currentSegment.fastTransfer) : '정보 없음'}
+                </Text>
+              </View>
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [styles.transferDoneBtn, pressed && styles.pressed]}
+              onPress={handleTransferComplete}>
+              <Ionicons name="checkmark" size={16} color="#0B1026" />
+              <Text style={styles.transferDoneText}>환승 완료</Text>
+            </Pressable>
+          </View>
         </View>
       ) : (
-        <View style={styles.activeCard}>
-          <View style={styles.activeTopRow}>
-            {currentRideSegment ? <LineBadge lineId={currentRideSegment.lineId} /> : null}
-            <View style={styles.activeTitleWrap}>
-              <Text style={styles.cardKicker}>{line?.name ?? currentRideSegment?.lineName ?? '탑승 구간'}</Text>
-              <Text style={styles.directionText}>{currentRideSegment?.direction ?? '방면 정보 확인 중'}</Text>
+        /* 우주 항해 카드 — 현재 위치 정보 + VoyageTrack 을 하나의 딥스페이스 카드로 통합(웹 대응) */
+        <View style={styles.spaceCard}>
+          <Starfield speed={remainingStations > 0 ? 0.55 : 0.12} density={0.22} shootingStars />
+          <View style={styles.spaceInner}>
+            <View style={styles.spaceTopRow}>
+              <View style={styles.spaceLineRow}>
+                {currentRideSegment ? <LineBadge lineId={currentRideSegment.lineId} /> : null}
+                <Text style={styles.spaceDirection} numberOfLines={1}>
+                  {currentRideSegment?.direction ?? line?.name ?? '탑승 구간'}
+                </Text>
+              </View>
+              <View style={styles.spaceBadges}>
+                {selectedTrain ? (
+                  <Text style={styles.spaceTrainBadge}>
+                    {selectedTrain.trainNo}
+                    {isSimulated ? '' : '호'}
+                  </Text>
+                ) : null}
+                {isSimulated ? <Text style={styles.spaceSimBadge}>시뮬</Text> : null}
+              </View>
             </View>
-            {isSimulated ? <Text style={styles.simBadgeLarge}>SIM</Text> : null}
-          </View>
 
-          <Text style={styles.currentStation}>{currentStationName}</Text>
-          <Text style={styles.cardBody}>
-            {remainingStations > 0 ? `${currentRideSegment?.toStationName}까지 ${remainingStations}개 역 남음` : '도착역입니다'}
-          </Text>
+            <Text style={styles.spaceKicker}>{isWaitingForBoard ? '승차 대기' : '현재 위치'}</Text>
+            <Text
+              style={[styles.spaceStation, { textShadowColor: line?.color ?? palette.accent }]}
+              numberOfLines={1}>
+              {currentStationName}
+            </Text>
+            <Text style={styles.spaceSub} numberOfLines={1}>
+              {isWaitingForBoard
+                ? `선택 열차 ${stationsUntilBoard}정거장 전 · ${boardEtaMinutes <= 0 ? '곧 승차' : `약 ${boardEtaMinutes}분 후 승차`}`
+                : remainingStations > 0
+                  ? `${currentRideSegment?.toStationName}까지 ${remainingStations}개 역 · 약 ${remainingStations * 2}분 후 도착`
+                  : '도착역입니다'}
+            </Text>
 
-          <View style={styles.railWrap}>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: line?.color ?? palette.accent }]} />
-            </View>
-            <View style={[styles.trainMarker, { left: `${progress * 100}%`, borderColor: line?.color ?? palette.accent }]}>
-              <Ionicons name="train" size={10} color={line?.color ?? palette.accent} />
-            </View>
-          </View>
+            {currentRideSegment ? (
+              <VoyageTrack
+                progress={progress}
+                stationCount={currentRideSegment.stationNames.length}
+                currentIndex={safeStationIndex}
+                remaining={remainingStations}
+                lineColor={line?.color ?? palette.accent}
+                moving={remainingStations > 0}
+              />
+            ) : null}
 
-          <View style={styles.controlRow}>
-            <Pressable style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]} onPress={handlePrevious}>
-              <Ionicons name="chevron-back" size={17} color={palette.accent} />
-              <Text style={styles.secondaryButtonText}>이전</Text>
-            </Pressable>
-            <Pressable style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]} onPress={handleNext}>
-              <Text style={styles.secondaryButtonText}>{isFinalArrival ? '도착 완료' : '다음'}</Text>
-              <Ionicons name="chevron-forward" size={17} color={palette.accent} />
-            </Pressable>
+            {isFinalArrival ? (
+              <View style={styles.arrivedBanner}>
+                <View style={styles.arrivedPlanet}>
+                  <Ionicons name="planet" size={16} color="#DDE6FF" />
+                </View>
+                <View style={styles.arrivedCopy}>
+                  <Text style={styles.arrivedText}>목적지 도착 · 항해 완료</Text>
+                  <Text style={styles.arrivedSub}>{route.overallToStation}에 무사히 도착했어요</Text>
+                </View>
+              </View>
+            ) : null}
           </View>
         </View>
       )}
-
-      {currentSegment?.type === 'ride' && currentRideSegment ? (
-        <View style={styles.voyageCard}>
-          <Starfield speed={remainingStations > 0 ? 0.5 : 0.12} density={0.2} />
-          <VoyageTrack
-            progress={progress}
-            stationCount={currentRideSegment.stationNames.length}
-            currentIndex={safeStationIndex}
-            remaining={remainingStations}
-            lineColor={line?.color ?? palette.accent}
-            moving={remainingStations > 0}
-          />
-        </View>
-      ) : null}
 
       <View style={styles.alertCard}>
         <View style={styles.alertHeader}>
@@ -751,17 +821,19 @@ export default function RidingScreen() {
             기기 알림 권한이 꺼져 있어 화면 안에서만 표시됩니다. 시스템 설정에서 메트로넛 알림을 허용해 주세요.
           </Text>
         ) : null}
-        <View style={styles.alarmBeforeRow}>
+        <View style={[styles.alarmBeforeRow, !alarmEnabled && styles.alarmBeforeRowDisabled]}>
           {[1, 2, 3].map((value) => (
             <Pressable
               key={value}
+              disabled={!alarmEnabled}
               onPress={() => {
                 selectionHaptic();
                 setAlarmBefore(value);
               }}
-              style={[styles.alarmBeforeButton, alarmBefore === value && styles.alarmBeforeButtonActive]}
+              style={[styles.alarmBeforeButton, alarmEnabled && alarmBefore === value && styles.alarmBeforeButtonActive]}
             >
-              <Text style={[styles.alarmBeforeText, alarmBefore === value && styles.alarmBeforeTextActive]}>
+              <Text
+                style={[styles.alarmBeforeText, alarmEnabled && alarmBefore === value && styles.alarmBeforeTextActive]}>
                 {value}역 전
               </Text>
             </Pressable>
@@ -858,13 +930,36 @@ export default function RidingScreen() {
       </ScrollView>
 
       {currentSegment?.type === 'ride' ? (
-        <View style={styles.drawerAnchor} pointerEvents="box-none">
+        <View style={[styles.drawerAnchor, { bottom: tabBarHeight }]} pointerEvents="box-none">
           <BottomSheet
             expanded={drawerExpanded}
             onChange={setDrawerExpanded}
             expandedHeight={DRAWER_EXPANDED_HEIGHT + insets.bottom}
             collapsedHeight={DRAWER_COLLAPSED_HEIGHT}>
             <View style={[styles.drawerBody, { paddingBottom: insets.bottom + 8 }]}>
+              {/* 세그먼트 진행 바 — 시트 상단(웹 topSlot 위치). 모든 탑승 구간 알약 + 슬라이딩 열차 마커. */}
+              {rideSegments.length > 0 ? (
+                <View style={styles.segmentBar}>
+                  {rideSegments.map((item, i) => {
+                    const segColor = getLineInfo(item.segment.lineId)?.color ?? palette.accent;
+                    const isCurrent = i === currentRideIdx;
+                    return (
+                      <View key={item.idx} style={[styles.segmentBarItem, { flexGrow: isCurrent ? 1.8 : 1 }]}>
+                        <View style={[styles.segmentBarPill, { backgroundColor: isCurrent ? segColor : `${segColor}66` }]}>
+                          {isCurrent ? (
+                            <View style={styles.segmentBarMarker}>
+                              <View style={[styles.segmentBarMarkerDot, { left: `${progress * 100}%` }]}>
+                                <Ionicons name="train" size={10} color={segColor} />
+                              </View>
+                            </View>
+                          ) : null}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
+
               <View style={styles.drawerHeader}>
                 <View style={styles.sectionTitleRow}>
                   <Ionicons name="train-outline" size={17} color={line?.color ?? palette.accent} />
@@ -888,22 +983,98 @@ export default function RidingScreen() {
                 </View>
               ) : null}
 
-              <ScrollView contentContainerStyle={styles.drawerList} showsVerticalScrollIndicator={false}>
-                {trainCandidates.length > 0 ? (
-                  trainCandidates.map((candidate) => (
-                    <TrainCandidateRow
-                      key={candidate.trainNo}
-                      candidate={candidate}
-                      selected={candidate.trainNo === selectedTrainNo}
-                      onPress={() => handleSelectTrain(candidate)}
-                    />
-                  ))
-                ) : (
-                  <View style={styles.loadingRow}>
-                    <Text style={styles.loadingText}>열차 후보를 불러오는 중입니다</Text>
-                  </View>
-                )}
-              </ScrollView>
+              {trainCandidates.length === 0 || !oriented ? (
+                <View style={styles.loadingRow}>
+                  <Text style={styles.loadingText}>열차 후보를 불러오는 중입니다</Text>
+                </View>
+              ) : (
+                <View style={isPastLastTrainForRide ? styles.railDisabled : undefined}>
+                  {isPastLastTrainForRide ? null : (
+                    <Text style={styles.railHint}>역 위의 열차를 눌러 선택하세요</Text>
+                  )}
+                  <ScrollView
+                    ref={railRef}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    onContentSizeChange={scrollRailToBoarding}
+                    contentContainerStyle={styles.railContent}>
+                    <View style={styles.railInner}>
+                      <View style={[styles.railBaseLine, { backgroundColor: line?.color ?? palette.accent }]} />
+                      {oriented.fromIdx >= 0 && oriented.toIdx >= 0 ? (
+                        <View
+                          style={[
+                            styles.railRouteLine,
+                            {
+                              backgroundColor: line?.color ?? palette.accent,
+                              left:
+                                RAIL_PADDING +
+                                Math.min(oriented.fromIdx, oriented.toIdx) * RAIL_STATION_WIDTH +
+                                RAIL_STATION_WIDTH / 2,
+                              width: Math.abs(oriented.toIdx - oriented.fromIdx) * RAIL_STATION_WIDTH,
+                            },
+                          ]}
+                        />
+                      ) : null}
+                      {oriented.stations.map((station, idx) => {
+                        const isFrom = idx === oriented.fromIdx;
+                        const isTo = idx === oriented.toIdx;
+                        const onRoute = routeStationSet.has(station.name);
+                        const trainsHere = candidatesByOrientedIdx.get(idx) ?? [];
+                        return (
+                          <View key={`${station.id}-${idx}`} style={styles.railStation}>
+                            <View style={styles.railTrainLane}>
+                              {trainsHere.slice(0, 2).map((train) => {
+                                const isSelected = train.trainNo === selectedTrainNo;
+                                const isExpress = train.trainType === '급행' || train.trainType === '특급';
+                                return (
+                                  <Pressable
+                                    key={train.trainNo}
+                                    accessibilityRole="button"
+                                    accessibilityState={{ selected: isSelected }}
+                                    onPress={() => handleSelectTrain(train)}
+                                    style={[
+                                      styles.pin,
+                                      { backgroundColor: line?.color ?? palette.accent },
+                                      isSelected && styles.pinSelected,
+                                    ]}>
+                                    <Ionicons name="train" size={11} color={palette.surface} />
+                                    {isExpress ? (
+                                      <Text style={[styles.pinExpress, { color: line?.color ?? palette.accent }]}>
+                                        {train.trainType}
+                                      </Text>
+                                    ) : null}
+                                    {isSelected ? <Text style={styles.pinNo}>{train.trainNo}</Text> : null}
+                                  </Pressable>
+                                );
+                              })}
+                              {trainsHere.length > 2 ? (
+                                <Text style={styles.pinMore}>+{trainsHere.length - 2}</Text>
+                              ) : null}
+                            </View>
+                            <View style={styles.railDotWrap}>
+                              {isFrom || isTo ? (
+                                <View style={[styles.railEndDot, { borderColor: isFrom ? palette.accent : palette.red }]} />
+                              ) : (
+                                <View
+                                  style={[
+                                    styles.railDot,
+                                    onRoute ? { backgroundColor: line?.color ?? palette.accent } : styles.railDotOff,
+                                  ]}
+                                />
+                              )}
+                            </View>
+                            <Text
+                              style={[styles.railStationName, (isFrom || isTo) && styles.railStationNameStrong]}
+                              numberOfLines={1}>
+                              {station.name}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </ScrollView>
+                </View>
+              )}
             </View>
           </BottomSheet>
         </View>
@@ -936,10 +1107,6 @@ const makeStyles = (palette: Palette) =>
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  drawerList: {
-    gap: spacing.sm,
-    paddingBottom: spacing.sm,
   },
   content: {
     gap: spacing.md,
@@ -976,82 +1143,165 @@ const makeStyles = (palette: Palette) =>
     fontSize: 12,
     fontWeight: '700',
   },
-  activeCard: {
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    gap: spacing.md,
-    padding: spacing.lg,
-    ...cardShadow,
+  spaceCard: {
+    borderRadius: radii.lg,
+    // 그라데이션 미지원 환경(web) 폴백.
+    backgroundColor: '#0e132e',
+    experimental_backgroundImage:
+      'linear-gradient(160deg, #0b1026 0%, #141b3d 55%, #0e132e 100%)',
+    overflow: 'hidden',
+    shadowColor: '#0D1238',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 10,
   },
-  activeTopRow: {
+  spaceInner: {
+    gap: spacing.xs,
+    padding: spacing.lg,
+  },
+  spaceTopRow: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
+    justifyContent: 'space-between',
   },
-  activeTitleWrap: {
+  spaceLineRow: {
+    alignItems: 'center',
     flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
     minWidth: 0,
   },
-  cardKicker: {
-    color: palette.subtleText,
-    fontSize: 13,
-    fontWeight: '900',
+  spaceDirection: {
+    color: '#C2CCEC',
+    flexShrink: 1,
+    fontSize: 14,
+    fontWeight: '800',
   },
-  directionText: {
-    color: palette.text,
+  spaceBadges: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  spaceTrainBadge: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: radii.sm,
+    color: '#9FC2FF',
+    fontSize: 10,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  spaceSimBadge: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: radii.sm,
+    color: '#FFD9A8',
+    fontSize: 10,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  spaceKicker: {
+    color: '#9AA3C0',
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: spacing.xs,
+  },
+  spaceStation: {
+    color: '#FFFFFF',
+    fontSize: 30,
+    fontWeight: '900',
+    lineHeight: 36,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 18,
+  },
+  spaceSub: {
+    color: '#9AA3C0',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  transferWalkBadge: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 217, 168, 0.16)',
+    borderRadius: radii.pill,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  transferPanel: {
+    backgroundColor: 'rgba(120,140,230,0.14)',
+    borderColor: 'rgba(170,190,255,0.2)',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    padding: spacing.md,
+  },
+  transferPanelLine: {
+    color: '#C2CCEC',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  transferFastRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  transferFastText: {
+    color: '#FFD9A8',
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  transferDoneBtn: {
+    alignItems: 'center',
+    backgroundColor: '#EAF0FF',
+    borderRadius: radii.sm,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+    minHeight: 50,
+  },
+  transferDoneText: {
+    color: '#0B1026',
     fontSize: 15,
     fontWeight: '900',
-    marginTop: 2,
   },
-  currentStation: {
-    color: palette.text,
-    fontSize: 34,
-    fontWeight: '900',
-    lineHeight: 40,
+  segmentBar: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    height: 22,
   },
-  cardBody: {
-    ...typography.body,
-    color: palette.subtleText,
-  },
-  voyageCard: {
-    borderRadius: radii.lg,
-    experimental_backgroundImage:
-      'linear-gradient(160deg, #0b1026 0%, #141b3d 55%, #0e132e 100%)',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    shadowColor: '#0D1238',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    elevation: 8,
-  },
-  railWrap: {
-    height: 20,
+  segmentBarItem: {
+    flexBasis: 0,
     justifyContent: 'center',
   },
-  progressTrack: {
-    backgroundColor: '#F0F1F4',
+  segmentBarPill: {
     borderRadius: radii.pill,
-    height: 8,
-    overflow: 'hidden',
+    height: 16,
+    justifyContent: 'center',
+    position: 'relative',
   },
-  progressFill: {
-    borderRadius: radii.pill,
-    height: 8,
+  segmentBarMarker: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
   },
-  trainMarker: {
+  segmentBarMarkerDot: {
     alignItems: 'center',
     backgroundColor: palette.surface,
+    borderColor: palette.surface,
     borderRadius: radii.pill,
     borderWidth: 2,
     height: 20,
     justifyContent: 'center',
     marginLeft: -10,
     position: 'absolute',
+    top: -2,
     width: 20,
     shadowColor: '#1B2838',
     shadowOffset: { width: 0, height: 1 },
@@ -1059,37 +1309,40 @@ const makeStyles = (palette: Palette) =>
     shadowRadius: 3,
     elevation: 3,
   },
-  controlRow: {
+  arrivedBanner: {
+    // 우주 카드 내부 인셋 패널 — 반투명으로 다크 배경 위에서 떠 보이게.
+    alignItems: 'center',
+    backgroundColor: 'rgba(120,140,230,0.16)',
+    borderColor: 'rgba(170,190,255,0.22)',
+    borderWidth: 1,
+    borderRadius: radii.md,
     flexDirection: 'row',
     gap: spacing.sm,
+    marginTop: spacing.sm,
+    minHeight: 58,
+    paddingHorizontal: spacing.md,
   },
-  secondaryButton: {
+  arrivedPlanet: {
     alignItems: 'center',
-    backgroundColor: '#EBF4FF',
-    borderRadius: radii.sm,
-    flex: 1,
-    flexDirection: 'row',
-    gap: spacing.xs,
+    backgroundColor: 'rgba(120, 140, 230, 0.2)',
+    borderRadius: radii.pill,
+    height: 34,
     justifyContent: 'center',
-    minHeight: 46,
+    width: 34,
   },
-  secondaryButtonText: {
-    color: palette.accent,
+  arrivedCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  arrivedText: {
+    color: '#F2F4FF',
     fontSize: 14,
     fontWeight: '900',
   },
-  primaryButton: {
-    alignItems: 'center',
-    backgroundColor: palette.text,
-    borderRadius: radii.sm,
-    justifyContent: 'center',
-    minHeight: 52,
-    paddingHorizontal: spacing.lg,
-  },
-  primaryButtonText: {
-    color: palette.surface,
-    fontSize: 16,
-    fontWeight: '900',
+  arrivedSub: {
+    color: '#A9B4D9',
+    fontSize: 12,
+    fontWeight: '600',
   },
   alertCard: {
     backgroundColor: palette.surface,
@@ -1127,6 +1380,9 @@ const makeStyles = (palette: Palette) =>
   alarmBeforeRow: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  alarmBeforeRowDisabled: {
+    opacity: 0.45,
   },
   alarmBeforeButton: {
     alignItems: 'center',
@@ -1180,12 +1436,6 @@ const makeStyles = (palette: Palette) =>
     fontSize: 13,
     fontWeight: '900',
   },
-  sectionHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
   sectionTitleRow: {
     alignItems: 'center',
     flex: 1,
@@ -1216,14 +1466,6 @@ const makeStyles = (palette: Palette) =>
     height: 38,
     justifyContent: 'center',
     width: 38,
-  },
-  listCard: {
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    overflow: 'hidden',
-    ...cardShadow,
   },
   preTransferCard: {
     backgroundColor: '#FFF8EF',
@@ -1322,59 +1564,116 @@ const makeStyles = (palette: Palette) =>
     fontSize: 13,
     lineHeight: 18,
   },
-  trainRow: {
-    alignItems: 'center',
-    borderBottomColor: palette.border,
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    minHeight: 68,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  trainRowSelected: {
-    backgroundColor: '#F0F1F4',
-  },
-  trainNoBadge: {
-    alignItems: 'center',
-    backgroundColor: '#EBF4FF',
-    borderRadius: radii.pill,
-    height: 32,
-    justifyContent: 'center',
-    width: 32,
-  },
-  trainCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  trainTitle: {
-    color: palette.text,
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  trainMeta: {
+  railHint: {
     color: palette.subtleText,
     fontSize: 12,
-    fontWeight: '800',
-    marginTop: 3,
+    fontWeight: '700',
   },
-  simBadge: {
-    backgroundColor: '#FFF1E7',
-    borderRadius: radii.pill,
-    color: '#C15B1B',
-    fontSize: 10,
-    fontWeight: '900',
-    paddingHorizontal: 7,
+  railDisabled: {
+    opacity: 0.4,
+  },
+  railContent: {
     paddingVertical: 4,
   },
-  simBadgeLarge: {
-    backgroundColor: '#FFF1E7',
+  railInner: {
+    flexDirection: 'row',
+    paddingHorizontal: RAIL_PADDING,
+    position: 'relative',
+  },
+  railBaseLine: {
+    borderRadius: 2,
+    height: 3,
+    left: RAIL_PADDING + RAIL_STATION_WIDTH / 2,
+    opacity: 0.22,
+    position: 'absolute',
+    right: RAIL_PADDING + RAIL_STATION_WIDTH / 2,
+    top: RAIL_LINE_TOP,
+  },
+  railRouteLine: {
+    borderRadius: 2,
+    height: 3,
+    position: 'absolute',
+    top: RAIL_LINE_TOP,
+  },
+  railStation: {
+    alignItems: 'center',
+    width: RAIL_STATION_WIDTH,
+  },
+  railTrainLane: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    justifyContent: 'center',
+    minHeight: 46,
+  },
+  railDotWrap: {
+    alignItems: 'center',
+    height: 20,
+    justifyContent: 'center',
+  },
+  railEndDot: {
+    backgroundColor: palette.surface,
     borderRadius: radii.pill,
-    color: '#C15B1B',
+    borderWidth: 3,
+    height: 16,
+    width: 16,
+  },
+  railDot: {
+    borderRadius: radii.pill,
+    height: 11,
+    width: 11,
+  },
+  railDotOff: {
+    backgroundColor: palette.surface,
+    borderColor: palette.muted,
+    borderWidth: 1,
+  },
+  railStationName: {
+    color: palette.subtleText,
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 4,
+    maxWidth: RAIL_STATION_WIDTH - 6,
+    textAlign: 'center',
+  },
+  railStationNameStrong: {
+    color: palette.text,
+    fontWeight: '900',
+  },
+  pin: {
+    alignItems: 'center',
+    borderRadius: radii.pill,
+    flexDirection: 'row',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  pinSelected: {
+    borderColor: palette.surface,
+    borderWidth: 2,
+    elevation: 4,
+    shadowColor: '#1B2838',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  pinExpress: {
+    backgroundColor: palette.surface,
+    borderRadius: 3,
+    fontSize: 9,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 3,
+  },
+  pinNo: {
+    color: palette.surface,
     fontSize: 11,
     fontWeight: '900',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+  },
+  pinMore: {
+    color: palette.subtleText,
+    fontSize: 11,
+    fontWeight: '800',
   },
   loadingRow: {
     alignItems: 'center',
@@ -1451,22 +1750,68 @@ const makeStyles = (palette: Palette) =>
     fontSize: 11,
     fontWeight: '900',
   },
-  emptyCard: {
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
+  launchCard: {
+    alignItems: 'center',
+    borderRadius: radii.lg,
+    // 그라데이션 미지원 환경(web 등)에서도 흰 글씨가 보이도록 단색 다크 폴백.
+    backgroundColor: '#0e132e',
+    experimental_backgroundImage: 'linear-gradient(160deg, #0b1026 0%, #141b3d 55%, #0e132e 100%)',
     gap: spacing.md,
-    padding: spacing.lg,
+    overflow: 'hidden',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl + spacing.md,
+    shadowColor: '#0D1238',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 22,
+    elevation: 10,
   },
-  emptyTitle: {
-    color: palette.text,
+  launchOrbit: {
+    alignItems: 'center',
+    borderColor: 'rgba(160, 180, 255, 0.28)',
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    height: 92,
+    justifyContent: 'center',
+    width: 92,
+  },
+  launchPlanet: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(120, 140, 230, 0.18)',
+    borderRadius: radii.pill,
+    height: 64,
+    justifyContent: 'center',
+    width: 64,
+  },
+  launchTitle: {
+    color: '#F2F4FF',
     fontSize: 20,
     fontWeight: '900',
+    marginTop: spacing.xs,
+    textAlign: 'center',
   },
-  emptyBody: {
-    ...typography.body,
-    color: palette.subtleText,
+  launchBody: {
+    color: '#A9B4D9',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  launchButton: {
+    alignItems: 'center',
+    backgroundColor: '#EAF0FF',
+    borderRadius: radii.sm,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    marginTop: spacing.xs,
+    minHeight: 50,
+    paddingHorizontal: spacing.lg,
+  },
+  launchButtonText: {
+    color: '#0B1026',
+    fontSize: 15,
+    fontWeight: '900',
   },
   pressed: {
     opacity: 0.72,

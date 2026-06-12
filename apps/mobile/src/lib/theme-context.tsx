@@ -48,7 +48,9 @@ function normalizeScheme(value: string | null | undefined): ThemeScheme {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [preference, setPreferenceState] = useState<ThemePreference>('system');
+  // 웹(client)은 light 전용이므로 기본값을 light로 맞춘다. 시스템이 다크여도
+  // 사용자가 설정에서 명시적으로 바꾸기 전까지는 웹과 동일한 라이트 룩을 유지한다.
+  const [preference, setPreferenceState] = useState<ThemePreference>('light');
   const [systemScheme, setSystemScheme] = useState<ThemeScheme>(
     normalizeScheme(Appearance.getColorScheme()),
   );

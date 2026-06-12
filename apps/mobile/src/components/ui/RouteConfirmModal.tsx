@@ -213,12 +213,15 @@ const makeStyles = (palette: Palette) =>
     fontWeight: '600',
   },
   btnConfirm: {
-    backgroundColor: palette.primary,
+    // 여정 시작 CTA — 홈 검색/탑승 안내 시작과 동일한 딥스페이스 톤(단색 폴백 + 그라데이션).
+    backgroundColor: '#0b1026',
+    experimental_backgroundImage: 'linear-gradient(160deg, #141b3d 0%, #0b1026 100%)',
+    overflow: 'hidden',
   },
   btnConfirmText: {
-    color: palette.surface,
+    color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   pressed: {
     opacity: 0.8,

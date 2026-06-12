@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getAllLines, getStationsByLine } from '@shared/metro/pathfinder';
 
+import { Starfield } from '@/components/space';
 import {
   DEFAULT_APP_PREFERENCES,
   getAppPreferences,
@@ -29,7 +30,7 @@ import { FAVORITE_ROUTES_KEY } from '@/lib/routeFavorites';
 import { getUseSimulatedTrainData, setUseSimulatedTrainData } from '@/lib/simulationSettings';
 import { STATION_FAVORITES_KEY } from '@/lib/stationFavorites';
 import { slideUp, stagger } from '@/lib/animations';
-import { cardShadow, radii, spacing, typography, type Palette } from '@/lib/theme';
+import { cardShadow, radii, spacing, type Palette } from '@/lib/theme';
 import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 const appIcon = require('@/assets/images/icon.png');
@@ -211,13 +212,12 @@ export default function SettingsTab() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.screenTitle}>설정</Text>
-
         <Animated.View entering={slideUp(stagger(0))} style={styles.headerCard}>
+          <Starfield speed={0.3} density={0.26} shootingStars />
           <Image source={appIcon} style={styles.appIcon} contentFit="cover" />
           <View style={styles.headerCopy}>
             <Text style={styles.appName}>메트로넛</Text>
-            <Text style={styles.appDescription}>서울 지하철 경로와 탑승 안내</Text>
+            <Text style={styles.appDescription}>지하철로 떠나는 우주 항해</Text>
           </View>
         </Animated.View>
 
@@ -436,40 +436,42 @@ const makeStyles = (palette: Palette) =>
     padding: spacing.lg,
     paddingBottom: 120,
   },
-  screenTitle: {
-    color: palette.text,
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
   headerCard: {
     alignItems: 'center',
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
+    // 그라데이션 미지원 환경(web)에서도 흰 글씨가 보이도록 단색 다크 폴백.
+    backgroundColor: '#0e132e',
+    experimental_backgroundImage: 'linear-gradient(160deg, #0b1026 0%, #141b3d 55%, #0e132e 100%)',
     borderRadius: radii.md,
-    borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,
-    padding: spacing.md,
-    ...cardShadow,
+    overflow: 'hidden',
+    padding: spacing.lg,
+    shadowColor: '#0D1238',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 8,
   },
   appIcon: {
+    borderColor: 'rgba(170, 190, 255, 0.25)',
     borderRadius: 16,
-    height: 64,
-    width: 64,
+    borderWidth: 1,
+    height: 60,
+    width: 60,
   },
   headerCopy: {
     flex: 1,
-    gap: 2,
+    gap: 3,
   },
   appName: {
-    color: palette.text,
-    fontSize: 17,
-    fontWeight: '800',
+    color: '#F2F4FF',
+    fontSize: 18,
+    fontWeight: '900',
   },
   appDescription: {
-    ...typography.body,
-    color: palette.subtleText,
+    color: '#A9B4D9',
+    fontSize: 13,
+    fontWeight: '600',
   },
   section: {
     gap: spacing.sm,

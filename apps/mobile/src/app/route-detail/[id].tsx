@@ -23,12 +23,13 @@ import {
   type FastTransferLookupInput,
 } from '@shared/fastTransfer';
 
+import { useTabBarHeight } from '@/components/AppTabBar';
 import { Starfield } from '@/components/space';
 import { PressableScale } from '@/components/ui';
 import { impactHaptic, selectionHaptic, successHaptic } from '@/lib/haptics';
 import { isFavoriteRoute, toggleFavoriteRoute } from '@/lib/routeFavorites';
 import { saveRidingRoute, type RidingRoutePayload } from '@/lib/ridingSession';
-import { cardShadow, radii, spacing, typography, type Palette } from '@/lib/theme';
+import { radii, spacing, typography, type Palette } from '@/lib/theme';
 import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 function firstParam(value: string | string[] | undefined) {
@@ -135,76 +136,109 @@ function LineBadge({ lineId, label }: { lineId: string; label?: string }) {
   );
 }
 
-function StatPill({ label, value }: { label: string; value: string }) {
-  const styles = useThemedStyles(makeStyles);
-  return (
-    <View style={styles.statPill}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statValue}>{value}</Text>
-    </View>
-  );
-}
-
 function RideSegment({
   segment,
+  isFirst,
+  isLast,
   expanded,
   onToggle,
 }: {
   segment: RouteSegment;
+  isFirst: boolean;
+  isLast: boolean;
   expanded: boolean;
   onToggle: () => void;
 }) {
   const { palette } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const line = getLineInfo(segment.lineId);
+  const segmentColor = line?.color ?? segment.lineColor;
   const stationCount = Math.max(segment.stations.length - 1, 0);
   const middleStations = segment.stations.slice(1, -1);
-  const direction = segment.pattern?.label ?? `${segment.toStation.name} 방면`;
 
   return (
-    <View style={styles.rideCard}>
-      <View style={styles.segmentHeader}>
-        <LineBadge lineId={segment.lineId} label={line?.shortName} />
-        <View style={styles.segmentTitleWrap}>
-          <Text style={styles.segmentTitle}>{line?.name ?? segment.lineName}</Text>
-          <Text style={styles.directionText}>{direction} 열차 탑승</Text>
+    <View style={styles.timelineSegment}>
+      {/* 세로 러닝 라인 — 점들이 위에 덮여 정거장처럼 보인다. */}
+      <View
+        style={[
+          styles.railLine,
+          { backgroundColor: segmentColor, bottom: isLast ? 44 : 16 },
+        ]}
+      />
+
+      {/* 승차역 */}
+      <View style={styles.timelineRow}>
+        <View style={styles.railCol}>
+          <View style={[styles.endpointDot, { borderColor: segmentColor }]} />
+        </View>
+        <View style={styles.timelineContent}>
+          {isFirst ? <Text style={styles.boardLabel}>승차</Text> : null}
+          <View style={styles.stationNameRow}>
+            <Text style={styles.stationName} numberOfLines={1}>
+              {segment.fromStation.name}
+            </Text>
+            <LineBadge lineId={segment.lineId} label={line?.shortName} />
+          </View>
+          {segment.pattern ? (
+            <View style={styles.patternRow}>
+              <View style={[styles.patternDot, { backgroundColor: segmentColor }]} />
+              <Text style={styles.patternText}>
+                {segment.pattern.label} 열차 탑승
+                {segment.boardWaitSeconds != null && segment.boardWaitSeconds > 0
+                  ? `  ·  약 ${Math.max(1, Math.round(segment.boardWaitSeconds / 60))}분 대기`
+                  : ''}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
-      <View style={styles.stationBlock}>
-        <View style={styles.stationRow}>
-          <View style={[styles.stationDot, { borderColor: line?.color ?? segment.lineColor }]} />
-          <Text style={styles.stationName}>{segment.fromStation.name}</Text>
-        </View>
-        <View style={styles.stationConnector} />
-        <View style={styles.stationRow}>
-          <View style={[styles.stationDot, { borderColor: line?.color ?? segment.lineColor }]} />
-          <Text style={styles.stationName}>{segment.toStation.name}</Text>
-        </View>
-      </View>
-
+      {/* 중간역 (접이식) */}
       {stationCount > 1 ? (
-        <Pressable style={({ pressed }) => [styles.middleButton, pressed && styles.pressed]} onPress={onToggle}>
-          <Ionicons name="train-outline" size={16} color={line?.color ?? palette.green} />
-          <Text style={styles.middleButtonText}>
-            {stationCount}개 역 이동 · {segment.time}분
-          </Text>
-          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={palette.muted} />
+        <Pressable style={({ pressed }) => [styles.middleRow, pressed && styles.pressed]} onPress={onToggle}>
+          <View style={styles.railCol}>
+            <View style={styles.middleIconMask}>
+              <Ionicons name="train-outline" size={14} color={segmentColor} />
+            </View>
+          </View>
+          <View style={styles.middlePill}>
+            <Text style={styles.middleButtonText} numberOfLines={1}>
+              {stationCount}개 역 이동 ({segment.time}분)
+            </Text>
+            <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={palette.subtleText} />
+          </View>
         </Pressable>
-      ) : (
-        <Text style={styles.segmentMeta}>{segment.time}분 이동</Text>
-      )}
+      ) : null}
 
       {expanded && middleStations.length > 0 ? (
-        <View style={styles.middleList}>
+        <View>
           {middleStations.map((station, index) => (
             <View key={`${station.id}-${index}`} style={styles.middleStationRow}>
-              <View style={styles.middleDot} />
-              <Text style={styles.middleStationText}>{station.name}</Text>
+              <View style={styles.railCol}>
+                <View style={styles.middleDot} />
+              </View>
+              <Text style={styles.middleStationText} numberOfLines={1}>
+                {station.name}
+              </Text>
             </View>
           ))}
         </View>
       ) : null}
+
+      {/* 하차역 */}
+      <View style={styles.timelineRow}>
+        <View style={styles.railCol}>
+          <View style={[styles.endpointDot, { borderColor: segmentColor }]} />
+        </View>
+        <View style={styles.timelineContent}>
+          {isLast ? <Text style={styles.boardLabel}>하차</Text> : null}
+          <View style={styles.stationNameRow}>
+            <Text style={styles.stationName} numberOfLines={1}>
+              {segment.toStation.name}
+            </Text>
+          </View>
+        </View>
+      </View>
     </View>
   );
 }
@@ -220,30 +254,23 @@ function TransferSegment({
   const toLine = getLineInfo(segment.lineId);
   const isLongTransfer = isLongTransferSegment(segment);
   const distanceLabel = segment.transferDistanceMeters ? ` · ${segment.transferDistanceMeters}m` : '';
-  const fastTransferLabel = fastTransfer ? formatFastTransferInfo(fastTransfer) : '정보 없음';
+  const fastTransferLabel = fastTransfer ? `빠른 환승 ${formatFastTransferInfo(fastTransfer)}` : '빠른 환승 정보 없음';
 
   return (
-    <View style={styles.transferCard}>
-      <View style={styles.transferHeader}>
-        <View style={styles.transferIcon}>
-          <Ionicons name="walk-outline" size={18} color="#C15B1B" />
-        </View>
-        <View style={styles.segmentTitleWrap}>
-          <View style={styles.transferTitleRow}>
-            <Text style={styles.transferTitle}>환승</Text>
-            <LineBadge lineId={segment.lineId} label={toLine?.shortName} />
-            {isLongTransfer ? <Text style={styles.longTransferPill}>긴 환승</Text> : null}
-          </View>
-          <Text style={styles.transferBody}>
-            환승 동선 {formatTransferDuration(segment)}
-            {distanceLabel}
-          </Text>
-        </View>
+    <View style={styles.transferRow}>
+      <View style={styles.railCol}>
+        <Ionicons name="walk-outline" size={16} color="#E67E22" />
       </View>
-
-      <View style={styles.fastTransferRow}>
-        <Ionicons name="flash-outline" size={15} color="#C15B1B" />
-        <Text style={styles.fastTransferText}>빠른 환승 {fastTransferLabel}</Text>
+      <View style={styles.transferBox}>
+        <View style={styles.transferTitleRow}>
+          <Text style={styles.transferTitle}>환승</Text>
+          <LineBadge lineId={segment.lineId} label={toLine?.shortName} />
+          {isLongTransfer ? <Text style={styles.longTransferPill}>긴 환승</Text> : null}
+        </View>
+        <Text style={styles.transferBody}>
+          환승 동선 {formatTransferDuration(segment)}
+          {distanceLabel} · {fastTransferLabel}
+        </Text>
       </View>
     </View>
   );
@@ -253,6 +280,7 @@ export default function RouteDetailScreen() {
   const { palette } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
+  const tabBarHeight = useTabBarHeight();
   const params = useLocalSearchParams<{ id?: string; from?: string; via?: string; to?: string }>();
   const id = firstParam(params.id);
   const from = firstParam(params.from);
@@ -350,14 +378,21 @@ export default function RouteDetailScreen() {
 
   if (!route) {
     return (
-      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + spacing.lg }]}>
         <Stack.Screen options={{ title: '경로 상세' }} />
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>경로를 불러오지 못했습니다</Text>
-          <Text style={styles.emptyBody}>경로 선택 화면에서 다시 이동할 경로를 고르세요.</Text>
+        {/* 경로 없음 — 딥스페이스 연출(막차/오류 카드와 일관) */}
+        <View style={styles.nightCard}>
+          <Starfield speed={0.2} density={0.32} shootingStars />
+          <View style={styles.nightMoon}>
+            <Ionicons name="planet-outline" size={22} color="#DDE6FF" />
+          </View>
+          <Text style={styles.nightTitle}>경로를 불러오지 못했습니다</Text>
+          <Text style={styles.nightBody}>경로 선택 화면에서 다시 이동할 경로를 고르세요.</Text>
           <Link href="/" asChild>
-            <Pressable style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
-              <Text style={styles.primaryButtonText}>홈으로 돌아가기</Text>
+            <Pressable style={({ pressed }) => pressed && styles.pressed}>
+              <View style={styles.nightButton}>
+                <Text style={styles.nightButtonText}>홈으로 돌아가기</Text>
+              </View>
             </Pressable>
           </Link>
         </View>
@@ -366,8 +401,9 @@ export default function RouteDetailScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Stack.Screen options={{ title: '경로 상세' }} />
+    <View style={styles.screen}>
+      <ScrollView style={styles.scrollFlex} contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + 100 }]}>
+        <Stack.Screen options={{ title: '경로 상세' }} />
 
       <View style={styles.header}>
         <Text style={styles.kicker}>선택한 경로</Text>
@@ -376,12 +412,14 @@ export default function RouteDetailScreen() {
 
       <View style={styles.summary}>
         <View style={styles.summaryTop}>
-          <View>
-            <View style={styles.timeRow}>
-              <Text style={styles.summaryTime}>{route.totalTime}분</Text>
-              <Text style={styles.summaryUnit}>소요</Text>
-            </View>
-            <Text style={styles.arrivalText}>도착 예정 {calculateArrivalTime(route.totalTime)}</Text>
+          <View style={styles.timeRow}>
+            <Text style={styles.summaryTime}>{route.totalTime}분</Text>
+            <Text style={styles.summaryUnit}>소요</Text>
+          </View>
+
+          <View style={styles.summaryRight}>
+            <Text style={styles.arrivalLabel}>도착 예정</Text>
+            <Text style={styles.arrivalText}>{calculateArrivalTime(route.totalTime)}</Text>
           </View>
 
           <Pressable
@@ -394,10 +432,17 @@ export default function RouteDetailScreen() {
         </View>
 
         <View style={styles.statsRow}>
-          <StatPill label="환승" value={`${route.transferCount}회`} />
-          <StatPill label="역" value={`${route.stationCount}개`} />
-          <StatPill label="요금" value={`₩${route.fare.toLocaleString()}`} />
-          <StatPill label="환승 이동" value={`${route.walkTime}분`} />
+          <Text style={styles.statText}>환승 {route.transferCount}회</Text>
+          <Text style={styles.statDivider}>·</Text>
+          <Text style={styles.statText}>{route.stationCount}개 역</Text>
+          <Text style={styles.statDivider}>·</Text>
+          <Text style={styles.statText}>₩{route.fare.toLocaleString()}</Text>
+          {route.walkTime > 0 ? (
+            <>
+              <Text style={styles.statDivider}>·</Text>
+              <Text style={styles.statText}>환승 이동 {route.walkTime}분</Text>
+            </>
+          ) : null}
         </View>
       </View>
 
@@ -405,25 +450,35 @@ export default function RouteDetailScreen() {
         <Text style={styles.sectionTitle}>이동 타임라인</Text>
       </View>
 
-      {route.segments.map((segment, index) =>
-        segment.isTransfer ? (
-          <TransferSegment key={`${segment.lineId}-${index}`} segment={segment} fastTransfer={fastTransfers[index]} />
-        ) : (
-          <RideSegment
-            key={`${segment.lineId}-${segment.fromStation.id}-${segment.toStation.id}-${index}`}
-            segment={segment}
-            expanded={expandedSegments.has(index)}
-            onToggle={() => toggleSegment(index)}
-          />
-        ),
-      )}
+      <View style={styles.timeline}>
+        {route.segments.map((segment, index) =>
+          segment.isTransfer ? (
+            <TransferSegment key={`${segment.lineId}-${index}`} segment={segment} fastTransfer={fastTransfers[index]} />
+          ) : (
+            <RideSegment
+              key={`${segment.lineId}-${segment.fromStation.id}-${segment.toStation.id}-${index}`}
+              segment={segment}
+              isFirst={index === 0}
+              isLast={index === route.segments.length - 1}
+              expanded={expandedSegments.has(index)}
+              onToggle={() => toggleSegment(index)}
+            />
+          ),
+        )}
+      </View>
 
-      <PressableScale style={styles.ridingButton} haptic onPress={handleStartRiding}>
-        <Starfield speed={0.5} density={0.22} />
-        <Ionicons name="play" size={17} color={palette.surface} />
-        <Text style={styles.ridingButtonText}>탑승 안내 시작</Text>
-      </PressableScale>
-    </ScrollView>
+      </ScrollView>
+
+      {/* 하단 고정 CTA — 웹과 동일하게 탭바 위에 떠 있고 위쪽 페이드로 콘텐츠와 자연스럽게 이어짐 */}
+      <View style={[styles.ctaDock, { bottom: tabBarHeight }]} pointerEvents="box-none">
+        <View style={styles.ctaFade} pointerEvents="none" />
+        <PressableScale style={styles.ridingButton} haptic onPress={handleStartRiding}>
+          <Starfield speed={0.5} density={0.22} />
+          <Ionicons name="play" size={17} color="#FFFFFF" />
+          <Text style={styles.ridingButtonText}>탑승 안내 시작</Text>
+        </PressableScale>
+      </View>
+    </View>
   );
 }
 
@@ -433,10 +488,32 @@ const makeStyles = (palette: Palette) =>
     flex: 1,
     backgroundColor: palette.background,
   },
+  scrollFlex: {
+    flex: 1,
+  },
   content: {
     gap: spacing.md,
     padding: spacing.lg,
     paddingBottom: 48,
+  },
+  ctaDock: {
+    backgroundColor: palette.background,
+    left: 0,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+    paddingTop: spacing.xs,
+    position: 'absolute',
+    right: 0,
+  },
+  ctaFade: {
+    // RNW 그라데이션 파서가 rgba(...)의 내부 콤마에서 깨져 route-detail 전체가 크래시했음
+    // → transparent 키워드(콤마 없음)로 교체.
+    experimental_backgroundImage: `linear-gradient(180deg, transparent 0%, ${palette.background} 100%)`,
+    height: 28,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: -28,
   },
   header: {
     gap: spacing.xs,
@@ -460,9 +537,8 @@ const makeStyles = (palette: Palette) =>
     padding: spacing.lg,
   },
   summaryTop: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
     flexDirection: 'row',
-    justifyContent: 'space-between',
     gap: spacing.md,
   },
   timeRow: {
@@ -472,23 +548,33 @@ const makeStyles = (palette: Palette) =>
   },
   summaryTime: {
     color: palette.text,
-    fontSize: 38,
+    fontSize: 30,
     fontWeight: '900',
-    lineHeight: 44,
+    lineHeight: 36,
   },
   summaryUnit: {
     color: palette.muted,
     fontSize: 14,
     fontWeight: '800',
   },
-  arrivalText: {
+  summaryRight: {
+    alignItems: 'flex-end',
+    flex: 1,
+  },
+  arrivalLabel: {
     color: palette.subtleText,
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  arrivalText: {
+    color: palette.text,
+    fontSize: 16,
+    fontWeight: '900',
+    marginTop: 1,
   },
   favoriteButton: {
     alignItems: 'center',
-    backgroundColor: '#F0F1F4',
+    backgroundColor: palette.surfaceAlt,
     borderRadius: radii.pill,
     height: 44,
     justifyContent: 'center',
@@ -498,29 +584,20 @@ const makeStyles = (palette: Palette) =>
     backgroundColor: '#FFF7D9',
   },
   statsRow: {
+    alignItems: 'center',
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
-  statPill: {
-    backgroundColor: '#F0F1F4',
-    borderColor: palette.border,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    minWidth: 88,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
+  statText: {
+    color: palette.subtleText,
+    fontSize: 13,
+    fontWeight: '700',
   },
-  statLabel: {
+  statDivider: {
     color: palette.muted,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  statValue: {
-    color: palette.text,
-    fontSize: 14,
-    fontWeight: '900',
-    marginTop: 2,
+    fontSize: 13,
+    fontWeight: '700',
   },
   timelineHeader: {
     marginTop: spacing.xs,
@@ -530,107 +607,122 @@ const makeStyles = (palette: Palette) =>
     fontSize: 18,
     fontWeight: '900',
   },
-  rideCard: {
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    gap: spacing.md,
-    padding: spacing.lg,
-    ...cardShadow,
-  },
-  segmentHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  segmentTitleWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  segmentTitle: {
-    color: palette.text,
-    fontSize: 17,
-    fontWeight: '900',
-  },
-  directionText: {
-    color: palette.subtleText,
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 2,
+  timeline: {
+    gap: 0,
   },
   lineBadge: {
     alignItems: 'center',
     borderRadius: radii.pill,
-    minWidth: 34,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
+    minWidth: 30,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   lineBadgeText: {
     color: palette.surface,
     fontSize: 11,
     fontWeight: '900',
   },
-  stationBlock: {
-    paddingLeft: 3,
+  // ── 연속 세로 타임라인(웹 RouteDetail 이식) ──
+  timelineSegment: {
+    position: 'relative',
   },
-  stationRow: {
-    alignItems: 'center',
+  railLine: {
+    borderRadius: 2,
+    left: 20,
+    position: 'absolute',
+    top: 20,
+    width: 3,
+  },
+  timelineRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    minHeight: 30,
+    gap: spacing.md,
   },
-  stationDot: {
+  railCol: {
+    alignItems: 'center',
+    paddingTop: 12,
+    width: 44,
+  },
+  endpointDot: {
     backgroundColor: palette.surface,
     borderRadius: radii.pill,
     borderWidth: 3,
     height: 16,
     width: 16,
   },
-  stationName: {
-    color: palette.text,
+  timelineContent: {
     flex: 1,
-    fontSize: 20,
-    fontWeight: '900',
+    minWidth: 0,
+    paddingBottom: spacing.lg,
+    paddingTop: 6,
   },
-  stationConnector: {
-    backgroundColor: palette.border,
-    height: 18,
-    marginLeft: 7,
-    width: 2,
+  boardLabel: {
+    color: palette.subtleText,
+    fontSize: 13,
+    marginBottom: 2,
   },
-  middleButton: {
+  stationNameRow: {
     alignItems: 'center',
-    backgroundColor: '#F0F1F4',
-    borderRadius: radii.sm,
     flexDirection: 'row',
     gap: spacing.sm,
-    minHeight: 44,
+  },
+  stationName: {
+    color: palette.text,
+    flexShrink: 1,
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  patternRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+  },
+  patternDot: {
+    borderRadius: radii.pill,
+    height: 6,
+    width: 6,
+  },
+  patternText: {
+    color: palette.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  middleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingVertical: 4,
+  },
+  middleIconMask: {
+    alignItems: 'center',
+    backgroundColor: palette.background,
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  middlePill: {
+    alignItems: 'center',
+    backgroundColor: palette.surfaceAlt,
+    borderRadius: radii.md,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   middleButtonText: {
     color: palette.subtleText,
     flex: 1,
     fontSize: 13,
-    fontWeight: '800',
-  },
-  segmentMeta: {
-    color: palette.subtleText,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  middleList: {
-    gap: spacing.xs,
-    paddingLeft: spacing.sm,
+    fontWeight: '700',
   },
   middleStationRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.sm,
-    minHeight: 28,
+    gap: spacing.md,
+    paddingVertical: 3,
   },
   middleDot: {
-    backgroundColor: '#C2C5CC',
+    backgroundColor: palette.muted,
     borderRadius: radii.pill,
     height: 6,
     width: 6,
@@ -638,28 +730,20 @@ const makeStyles = (palette: Palette) =>
   middleStationText: {
     color: palette.subtleText,
     flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  transferCard: {
-    backgroundColor: '#FFF8EF',
-    borderColor: '#F0E4D0',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.lg,
-  },
-  transferHeader: {
+  transferRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.md,
+    paddingVertical: spacing.md,
   },
-  transferIcon: {
-    alignItems: 'center',
-    backgroundColor: '#FBEAD9',
-    borderRadius: radii.pill,
-    height: 34,
-    justifyContent: 'center',
-    width: 34,
+  transferBox: {
+    backgroundColor: '#FFF7EF',
+    borderRadius: radii.md,
+    flex: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   transferTitleRow: {
     alignItems: 'center',
@@ -668,59 +752,32 @@ const makeStyles = (palette: Palette) =>
     gap: spacing.xs,
   },
   transferTitle: {
-    color: '#C15B1B',
-    fontSize: 15,
-    fontWeight: '900',
+    color: '#E67E22',
+    fontSize: 13,
+    fontWeight: '700',
   },
   transferBody: {
     color: palette.subtleText,
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
     marginTop: 4,
   },
   longTransferPill: {
-    backgroundColor: '#FBEAD9',
+    backgroundColor: '#FFE7D7',
     borderRadius: radii.pill,
     color: '#C15B1B',
-    fontSize: 11,
-    fontWeight: '900',
+    fontSize: 10,
+    fontWeight: '800',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  fastTransferRow: {
-    alignItems: 'center',
-    backgroundColor: '#FFF3E6',
-    borderRadius: radii.sm,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    minHeight: 38,
-    paddingHorizontal: spacing.sm,
-  },
-  fastTransferText: {
-    color: '#C15B1B',
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  primaryButton: {
-    alignItems: 'center',
-    backgroundColor: palette.text,
-    borderRadius: radii.sm,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    justifyContent: 'center',
-    minHeight: 54,
-    paddingHorizontal: spacing.lg,
-  },
-  primaryButtonText: {
-    color: palette.surface,
-    fontSize: 16,
-    fontWeight: '900',
+    paddingVertical: 2,
   },
   // 웹 '탑승 안내 시작' 딥스페이스 버튼(그라데이션 우선, Starfield 는 Phase 8).
   ridingButton: {
     alignItems: 'center',
     borderRadius: 16,
+    // 그라데이션 미지원 환경(web) 폴백 — 단색 딥스페이스.
+    backgroundColor: '#0b1026',
     experimental_backgroundImage: 'linear-gradient(160deg, #141b3d 0%, #0b1026 100%)',
     flexDirection: 'row',
     gap: spacing.sm,
@@ -739,22 +796,54 @@ const makeStyles = (palette: Palette) =>
     fontSize: 16,
     fontWeight: '800',
   },
-  emptyCard: {
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
+  nightCard: {
+    alignItems: 'flex-start',
+    // 그라데이션 미지원 환경(web) 폴백.
+    backgroundColor: '#0e132e',
+    experimental_backgroundImage: 'linear-gradient(165deg, #0b1026 0%, #141b3d 60%, #0e132e 100%)',
     borderRadius: radii.md,
-    borderWidth: 1,
-    gap: spacing.md,
+    gap: spacing.sm,
+    overflow: 'hidden',
     padding: spacing.lg,
+    shadowColor: '#0D1238',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 8,
   },
-  emptyTitle: {
-    color: palette.text,
-    fontSize: 20,
+  nightMoon: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(150, 170, 245, 0.18)',
+    borderRadius: radii.pill,
+    height: 44,
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+    width: 44,
+  },
+  nightTitle: {
+    color: '#F2F4FF',
+    fontSize: 18,
     fontWeight: '900',
   },
-  emptyBody: {
-    ...typography.body,
-    color: palette.subtleText,
+  nightBody: {
+    color: '#C2CCEC',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  nightButton: {
+    alignItems: 'center',
+    backgroundColor: '#EAF0FF',
+    borderRadius: radii.sm,
+    justifyContent: 'center',
+    marginTop: spacing.xs,
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
+  },
+  nightButtonText: {
+    color: '#0B1026',
+    fontSize: 15,
+    fontWeight: '900',
   },
   pressed: {
     opacity: 0.72,

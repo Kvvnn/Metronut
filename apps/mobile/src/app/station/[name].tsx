@@ -6,6 +6,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import { getFirstLastTrain, type DayType } from '@shared/metro/firstLastTrain';
 import { getLineInfo, getStationInfo, type Station } from '@shared/metro/pathfinder';
 
+import { useTabBarHeight } from '@/components/AppTabBar';
 import { getRealtimeArrivals, type ArrivalInfo } from '@/lib/realtimeApi';
 import { impactHaptic, selectionHaptic } from '@/lib/haptics';
 import {
@@ -150,6 +151,7 @@ function FavoriteButton({
 export default function StationScreen() {
   const { palette } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const tabBarHeight = useTabBarHeight();
   const params = useLocalSearchParams<{ name?: string; line?: string }>();
   const stationName = decodeURIComponent(firstParam(params.name) || '');
   const requestedLine = firstParam(params.line);
@@ -230,14 +232,13 @@ export default function StationScreen() {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + spacing.lg }]}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={loadArrivals} tintColor={palette.accent} />}
     >
-      <Stack.Screen options={{ title: `${stationName}역` }} />
+      <Stack.Screen options={{ title: '역 정보' }} />
 
       <View style={styles.header}>
         <View style={styles.headerCopy}>
-          <Text style={styles.kicker}>Station</Text>
           <View style={styles.titleRow}>
             <Text style={styles.title}>{stationName}역</Text>
             {isFavoriteStation ? <Ionicons name="star" size={20} color="#C8A218" /> : null}
@@ -318,31 +319,34 @@ export default function StationScreen() {
 
       {firstLast ? (
         <View style={styles.scheduleGrid}>
-          <View style={styles.scheduleCard}>
-            <Text style={styles.scheduleDirection}>{firstLast.downTerminus} 방면</Text>
-            <View style={styles.scheduleRow}>
-              <Text style={styles.scheduleLabel}>첫차</Text>
-              <Text style={styles.scheduleTime}>{firstLast.downFirst}</Text>
+          {[
+            { terminus: firstLast.downTerminus, first: firstLast.downFirst, last: firstLast.downLast },
+            { terminus: firstLast.upTerminus, first: firstLast.upFirst, last: firstLast.upLast },
+          ].map((dir, index) => (
+            <View key={index} style={styles.scheduleCard}>
+              <Text style={styles.scheduleDirection}>{dir.terminus} 방면</Text>
+              <View style={styles.scheduleRow}>
+                <View style={styles.scheduleLabelWrap}>
+                  <Ionicons name="partly-sunny-outline" size={13} color="#E0992B" />
+                  <Text style={styles.scheduleLabel}>첫차</Text>
+                </View>
+                <Text style={styles.scheduleTime}>{dir.first}</Text>
+              </View>
+              <View style={styles.scheduleRow}>
+                <View style={styles.scheduleLabelWrap}>
+                  <Ionicons name="moon-outline" size={13} color="#5B6BB5" />
+                  <Text style={styles.scheduleLabel}>막차</Text>
+                </View>
+                <Text style={styles.scheduleTime}>{dir.last}</Text>
+              </View>
             </View>
-            <View style={styles.scheduleRow}>
-              <Text style={styles.scheduleLabel}>막차</Text>
-              <Text style={styles.scheduleTime}>{firstLast.downLast}</Text>
-            </View>
-          </View>
-          <View style={styles.scheduleCard}>
-            <Text style={styles.scheduleDirection}>{firstLast.upTerminus} 방면</Text>
-            <View style={styles.scheduleRow}>
-              <Text style={styles.scheduleLabel}>첫차</Text>
-              <Text style={styles.scheduleTime}>{firstLast.upFirst}</Text>
-            </View>
-            <View style={styles.scheduleRow}>
-              <Text style={styles.scheduleLabel}>막차</Text>
-              <Text style={styles.scheduleTime}>{firstLast.upLast}</Text>
-            </View>
-          </View>
+          ))}
         </View>
       ) : (
         <View style={styles.emptyCard}>
+          <View style={styles.emptyIcon}>
+            <Ionicons name="moon-outline" size={22} color="#5B6BB5" />
+          </View>
           <Text style={styles.emptyTitle}>첫차·막차 데이터가 없습니다</Text>
           <Text style={styles.emptyBody}>이 노선은 아직 참고 시간표가 준비되지 않았습니다.</Text>
         </View>
@@ -452,12 +456,6 @@ const makeStyles = (palette: Palette) =>
   headerCopy: {
     flex: 1,
     gap: spacing.xs,
-  },
-  kicker: {
-    color: palette.accent,
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
   },
   titleRow: {
     alignItems: 'center',
@@ -674,10 +672,15 @@ const makeStyles = (palette: Palette) =>
     fontWeight: '800',
   },
   scheduleRow: {
-    alignItems: 'baseline',
+    alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: spacing.sm,
+  },
+  scheduleLabelWrap: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 5,
   },
   scheduleLabel: {
     color: palette.muted,
@@ -817,21 +820,33 @@ const makeStyles = (palette: Palette) =>
     fontWeight: '700',
   },
   emptyCard: {
+    alignItems: 'center',
     backgroundColor: palette.surface,
     borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.lg,
+    gap: spacing.xs,
+    padding: spacing.xl,
+  },
+  emptyIcon: {
+    alignItems: 'center',
+    backgroundColor: '#EEF1FB',
+    borderRadius: radii.pill,
+    height: 46,
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+    width: 46,
   },
   emptyTitle: {
     color: palette.text,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
+    textAlign: 'center',
   },
   emptyBody: {
     ...typography.body,
     color: palette.subtleText,
+    textAlign: 'center',
   },
   pressed: {
     opacity: 0.72,

@@ -6,10 +6,11 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useTabBarHeight } from '@/components/AppTabBar';
 import { MetroOfficialMap } from '@/components/MetroOfficialMap';
 import { StationPickerSheet } from '@/components/StationPickerSheet';
-import { BottomSheet, RouteConfirmModal } from '@/components/ui';
-import { slideDown } from '@/lib/animations';
+import { BottomSheet, FloatingView, RouteConfirmModal } from '@/components/ui';
+import { fadeIn, slideDown } from '@/lib/animations';
 import { impactHaptic, selectionHaptic, successHaptic, warningHaptic } from '@/lib/haptics';
 import {
   getFavoriteRoutes,
@@ -26,10 +27,10 @@ import { useTheme, useThemedStyles } from '@/lib/theme-context';
 
 type StationField = 'from' | 'via' | 'to';
 
-/** 펼친 시트 노출 높이(safe-area 제외). 토글 + 즐겨찾기 칩 + 경로 목록 수용. */
-const SHEET_EXPANDED_HEIGHT = 330;
+/** 펼친 시트 노출 높이(safe-area 제외). 웹처럼 콘텐츠에 맞춰 낮게 — 지도를 더 보이게. */
+const SHEET_EXPANDED_HEIGHT = 284;
 /** 접힌 시트 노출 높이 — 핸들바만 살짝 보임. */
-const SHEET_COLLAPSED_HEIGHT = 40;
+const SHEET_COLLAPSED_HEIGHT = 28;
 
 function buildRouteResultPath(from: string, to: string, via: string) {
   const params = [
@@ -51,12 +52,15 @@ function SearchField({
   placeholder,
   onPress,
   onClear,
+  showClearWhenEmpty = false,
 }: {
   dotColor: string;
   value: string;
   placeholder: string;
   onPress: () => void;
   onClear?: () => void;
+  /** 값이 없어도 닫기(X) 버튼을 노출(경유역 칸 닫기용). */
+  showClearWhenEmpty?: boolean;
 }) {
   const { palette } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -66,7 +70,7 @@ function SearchField({
       <Text style={[styles.searchFieldValue, !value && styles.searchFieldPlaceholder]} numberOfLines={1}>
         {value || placeholder}
       </Text>
-      {value && onClear ? (
+      {(value || showClearWhenEmpty) && onClear ? (
         <Pressable accessibilityLabel="지우기" onPress={onClear} hitSlop={8} style={styles.searchFieldClear}>
           <Ionicons name="close" size={15} color={palette.muted} />
         </Pressable>
@@ -80,6 +84,7 @@ export default function HomeTab() {
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const tabBarHeight = useTabBarHeight();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [via, setVia] = useState('');
@@ -146,6 +151,9 @@ export default function HomeTab() {
       return;
     }
     successHaptic();
+    // 확인 모달을 먼저 닫는다. RN Modal은 앱 최상단에 떠 있어, 닫지 않으면
+    // 경로 결과 화면 위로 팝업이 그대로 남는다.
+    setConfirmDismissed(true);
     router.push(buildRouteResultPath(from, to, via) as Href);
   };
 
@@ -193,11 +201,12 @@ export default function HomeTab() {
             />
             <View style={styles.searchDivider} />
             {showVia || via ? (
-              <>
+              <Animated.View entering={fadeIn(0, 260)} style={styles.viaFieldWrap}>
                 <SearchField
                   dotColor={palette.green}
                   value={via}
                   placeholder="경유역"
+                  showClearWhenEmpty
                   onPress={() => setPickerField('via')}
                   onClear={() => {
                     setVia('');
@@ -205,7 +214,7 @@ export default function HomeTab() {
                   }}
                 />
                 <View style={styles.searchDivider} />
-              </>
+              </Animated.View>
             ) : (
               <Pressable
                 onPress={() => {
@@ -232,12 +241,14 @@ export default function HomeTab() {
               style={({ pressed }) => [styles.swapButton, pressed && styles.pressed]}>
               <Ionicons name="swap-vertical" size={16} color={palette.text} />
             </Pressable>
-            <Pressable
-              accessibilityLabel="경로 검색"
-              onPress={goToResult}
-              style={({ pressed }) => [styles.searchButton, pressed && styles.pressed]}>
-              <Ionicons name="search" size={18} color={palette.surface} />
-            </Pressable>
+            <FloatingView cycle={6000}>
+              <Pressable
+                accessibilityLabel="경로 검색"
+                onPress={goToResult}
+                style={({ pressed }) => [styles.searchButton, pressed && styles.pressed]}>
+                <Ionicons name="search" size={18} color="#FFFFFF" />
+              </Pressable>
+            </FloatingView>
           </View>
         </Animated.View>
         {!from || !to ? (
@@ -247,8 +258,8 @@ export default function HomeTab() {
         ) : null}
       </View>
 
-      {/* 하단 즐겨찾기 시트 — 실제 드래그(Phase 1 BottomSheet) */}
-      <View style={styles.sheetAnchor} pointerEvents="box-none">
+      {/* 하단 즐겨찾기 시트 — 전역 탭바 위로 올려 핸들이 가리지 않게 한다. */}
+      <View style={[styles.sheetAnchor, { bottom: tabBarHeight }]} pointerEvents="box-none">
         <BottomSheet
           expanded={!sheetCollapsed}
           onChange={(expanded) => setSheetCollapsed(!expanded)}
@@ -303,14 +314,22 @@ export default function HomeTab() {
                 </View>
 
                 {favoriteRoutes.length === 0 && !hasStationFavorites ? (
-                  <Text style={styles.favEmptyText}>
-                    역 상세에서 자주 가는 역을 설정하거나 경로 상세에서 별을 누르세요.
-                  </Text>
+                  <View style={styles.favEmptyRow}>
+                    <View style={styles.favEmptyIcon}>
+                      <Ionicons name="sparkles" size={15} color="#C8A218" />
+                    </View>
+                    <View style={styles.favEmptyCopy}>
+                      <Text style={styles.favEmptyTitle}>저장된 즐겨찾기가 없습니다</Text>
+                      <Text style={styles.favEmptyText}>
+                        역 상세에서 자주 가는 역을 설정하거나 경로 상세에서 별을 누르세요
+                      </Text>
+                    </View>
+                  </View>
                 ) : null}
 
                 <ScrollView style={styles.favRoutesScroll} contentContainerStyle={styles.favRoutesContent}>
-                  {favoriteRoutes.map((route) => (
-                    <View key={route.id} style={styles.favRouteRow}>
+                  {favoriteRoutes.map((route, index) => (
+                    <FloatingView key={route.id} cycle={8000} delay={index * 600} style={styles.favRouteRow}>
                       <Pressable
                         onPress={() => handleFavoriteRoutePress(route)}
                         style={({ pressed }) => [styles.favRouteBody, pressed && styles.pressed]}>
@@ -343,7 +362,7 @@ export default function HomeTab() {
                         style={({ pressed }) => [styles.favRouteRemoveBtn, pressed && styles.pressed]}>
                         <Ionicons name="trash-outline" size={15} color={palette.muted} />
                       </Pressable>
-                    </View>
+                    </FloatingView>
                   ))}
                 </ScrollView>
               </>
@@ -399,6 +418,9 @@ const makeStyles = (palette: Palette) =>
   },
   searchFields: {
     flex: 1,
+    gap: 2,
+  },
+  viaFieldWrap: {
     gap: 2,
   },
   searchField: {
@@ -457,11 +479,18 @@ const makeStyles = (palette: Palette) =>
   },
   searchButton: {
     alignItems: 'center',
-    backgroundColor: palette.primary,
+    // 웹 홈 검색 버튼과 동일한 딥스페이스 톤(그라데이션 + 단색 폴백).
+    backgroundColor: '#0b1026',
+    experimental_backgroundImage: 'linear-gradient(160deg, #141b3d 0%, #0b1026 100%)',
     borderRadius: radii.sm,
     height: 40,
     justifyContent: 'center',
     width: 40,
+    shadowColor: '#0D1238',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 5,
   },
   mapHint: {
     color: palette.text,
@@ -561,10 +590,34 @@ const makeStyles = (palette: Palette) =>
     fontSize: 14,
     fontWeight: '900',
   },
+  favEmptyRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 64,
+    paddingVertical: spacing.xs,
+  },
+  favEmptyIcon: {
+    alignItems: 'center',
+    backgroundColor: '#FFF7D9',
+    borderRadius: radii.pill,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  favEmptyCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  favEmptyTitle: {
+    color: palette.text,
+    fontSize: 14,
+    fontWeight: '800',
+  },
   favEmptyText: {
     color: palette.subtleText,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 17,
   },
   favRoutesScroll: {
     maxHeight: 132,

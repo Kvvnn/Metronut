@@ -3,8 +3,10 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect } from 'react';
+import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { AppTabBar } from '@/components/AppTabBar';
 import { applyGlobalFont } from '@/lib/apply-global-font';
 import { fontAssets } from '@/lib/fonts';
 import { initializeNotifications } from '@/lib/notifications';
@@ -17,7 +19,7 @@ SplashScreen.preventAutoHideAsync();
 function ThemedStack() {
   const { palette, scheme } = useTheme();
   return (
-    <>
+    <View style={{ flex: 1, backgroundColor: palette.background }}>
       <Stack
         screenOptions={{
           contentStyle: { backgroundColor: palette.background },
@@ -35,8 +37,9 @@ function ThemedStack() {
         <Stack.Screen name="riding" options={{ title: '탑승 안내' }} />
         <Stack.Screen name="station/[name]" options={{ title: '역 정보' }} />
       </Stack>
+      <AppTabBar />
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-    </>
+    </View>
   );
 }
 

@@ -90,25 +90,26 @@ export const cardShadow = {
   elevation: 2,
 } as const;
 
+// 웹(client) 폰트 스케일에 맞춰 전반적으로 한 단계 낮춤.
 export const typography = {
   display: {
-    fontSize: 30,
+    fontSize: 26,
     fontWeight: '800' as const,
-    lineHeight: 36,
+    lineHeight: 32,
     letterSpacing: -0.5,
   },
   title: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '800' as const,
-    lineHeight: 30,
+    lineHeight: 26,
     letterSpacing: -0.4,
   },
   body: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 20,
   },
   caption: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 12,
+    lineHeight: 18,
   },
 } as const;

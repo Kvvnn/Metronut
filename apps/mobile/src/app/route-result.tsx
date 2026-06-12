@@ -22,6 +22,8 @@ import {
 } from '@shared/metro/routeServiceWindow';
 import { formatServiceMinute } from '@shared/metro/serviceSchedule';
 
+import { useTabBarHeight } from '@/components/AppTabBar';
+import { Starfield } from '@/components/space';
 import { FloatingView } from '@/components/ui';
 import { slideUp, stagger } from '@/lib/animations';
 import { cardShadow, colors, radii, spacing, typography, type Palette } from '@/lib/theme';
@@ -45,7 +47,7 @@ const routeLabels: { label: string; color: string; icon: keyof typeof Ionicons.g
   { label: '편한 경로', color: colors.green, icon: 'heart' },
   { label: '도보 적은 경로', color: '#E67E22', icon: 'walk' },
   { label: '환승 대안', color: '#7C5CFF', icon: 'repeat' },
-  { label: '우회 경로', color: colors.muted, icon: 'time-outline' },
+  { label: '우회 경로', color: '#6B7280', icon: 'time-outline' },
 ];
 
 function firstParam(value: string | string[] | undefined) {
@@ -99,7 +101,8 @@ function RouteCard({
     <Animated.View entering={slideUp(stagger(index, 100))}>
       <FloatingView cycle={8000} delay={index * 420}>
         <Link href={routeDetailPath(index, from, to, via) as Href} asChild>
-          <Pressable style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
+          <Pressable style={({ pressed }) => pressed && styles.pressed}>
+            <View style={styles.card}>
             <View style={styles.cardMain}>
               <View style={styles.labelRow}>
                 <Ionicons name={label.icon} size={14} color={label.color} />
@@ -153,7 +156,7 @@ function RouteCard({
                 <Text style={styles.fareText}>₩{route.fare.toLocaleString()}</Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={palette.muted} style={styles.chevron} />
+            </View>
           </Pressable>
         </Link>
       </FloatingView>
@@ -163,6 +166,7 @@ function RouteCard({
 
 export default function RouteResultScreen() {
   const styles = useThemedStyles(makeStyles);
+  const tabBarHeight = useTabBarHeight();
   const params = useLocalSearchParams<{ from?: string; via?: string; to?: string }>();
   const from = firstParam(params.from);
   const via = firstParam(params.via);
@@ -197,7 +201,7 @@ export default function RouteResultScreen() {
   const title = from && to ? `${from} → ${via ? `${via} → ` : ''}${to}` : '경로 후보';
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + spacing.lg }]}>
       <Stack.Screen options={{ title: '경로 선택' }} />
       <View style={styles.header}>
         <Text style={styles.title}>{title}</Text>
@@ -206,14 +210,22 @@ export default function RouteResultScreen() {
 
       {!from || !to ? (
         <View style={styles.emptyCard}>
+          <View style={[styles.emptyIcon, { backgroundColor: '#EBF4FF' }]}>
+            <Ionicons name="navigate-circle-outline" size={24} color={colors.blue} />
+          </View>
           <Text style={styles.emptyTitle}>출발역과 도착역이 필요합니다</Text>
           <Text style={styles.emptyBody}>홈에서 역을 선택한 뒤 다시 검색하세요.</Text>
         </View>
       ) : serviceErrorCopy ? (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>{serviceErrorCopy.title}</Text>
-          <Text style={styles.emptyBody}>{serviceErrorCopy.description}</Text>
-          <Text style={styles.emptyHint}>{serviceErrorCopy.hint}</Text>
+        /* 막차/운행종료 — 별이 뜬 밤하늘 연출 */
+        <View style={styles.nightCard}>
+          <Starfield speed={0.2} density={0.34} shootingStars />
+          <View style={styles.nightMoon}>
+            <Ionicons name="moon" size={22} color="#DDE6FF" />
+          </View>
+          <Text style={styles.nightTitle}>{serviceErrorCopy.title}</Text>
+          <Text style={styles.nightBody}>{serviceErrorCopy.description}</Text>
+          <Text style={styles.nightHint}>{serviceErrorCopy.hint}</Text>
         </View>
       ) : routes.length > 0 ? (
         routes.map((route, index) => (
@@ -228,6 +240,9 @@ export default function RouteResultScreen() {
         ))
       ) : (
         <View style={styles.emptyCard}>
+          <View style={[styles.emptyIcon, { backgroundColor: '#FFF1E7' }]}>
+            <Ionicons name="search-outline" size={24} color="#C15B1B" />
+          </View>
           <Text style={styles.emptyTitle}>경로를 찾지 못했습니다</Text>
           <Text style={styles.emptyBody}>역 이름을 다시 확인하거나 경유역을 제거해보세요.</Text>
         </View>
@@ -259,13 +274,10 @@ const makeStyles = (palette: Palette) =>
     color: palette.subtleText,
   },
   card: {
-    alignItems: 'center',
     backgroundColor: palette.surface,
     borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
     padding: spacing.lg,
     ...cardShadow,
   },
@@ -292,7 +304,7 @@ const makeStyles = (palette: Palette) =>
   },
   timeText: {
     color: palette.text,
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '900',
   },
   arrivalText: {
@@ -380,28 +392,72 @@ const makeStyles = (palette: Palette) =>
     fontWeight: '700',
     marginLeft: 'auto',
   },
-  chevron: {
-    alignSelf: 'center',
-  },
   emptyCard: {
+    alignItems: 'center',
     backgroundColor: palette.surface,
     borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.xs,
-    padding: spacing.lg,
+    padding: spacing.xl,
+  },
+  emptyIcon: {
+    alignItems: 'center',
+    borderRadius: radii.pill,
+    height: 48,
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+    width: 48,
   },
   emptyTitle: {
     color: palette.text,
     fontSize: 17,
     fontWeight: '900',
+    textAlign: 'center',
   },
   emptyBody: {
     ...typography.body,
     color: palette.subtleText,
+    textAlign: 'center',
   },
-  emptyHint: {
-    ...typography.caption,
-    color: palette.muted,
+  nightCard: {
+    // 그라데이션 미지원 환경(web) 폴백.
+    backgroundColor: '#0e132e',
+    experimental_backgroundImage: 'linear-gradient(165deg, #0b1026 0%, #141b3d 60%, #0e132e 100%)',
+    borderRadius: radii.md,
+    gap: spacing.sm,
+    overflow: 'hidden',
+    padding: spacing.lg,
+    shadowColor: '#0D1238',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  nightMoon: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(150, 170, 245, 0.18)',
+    borderRadius: radii.pill,
+    height: 44,
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+    width: 44,
+  },
+  nightTitle: {
+    color: '#F2F4FF',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  nightBody: {
+    color: '#C2CCEC',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  nightHint: {
+    color: '#8C97C4',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
   },
 });
